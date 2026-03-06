@@ -15,18 +15,14 @@
  * Librairies requises (Library Manager) :
  *   - TMCStepper  by teemuatlut
  *   - AccelStepper by Mike McCaulay
+ *   - WiFiManager  by tzapu
  */
 
 #include <WiFi.h>
 #include <WebServer.h>
+#include <WiFiManager.h>
 #include <AccelStepper.h>
 #include <TMCStepper.h>
-
-// ===================================================================
-//  CONFIGURATION — à adapter
-// ===================================================================
-const char* WIFI_SSID     = "PortBlanc";
-const char* WIFI_PASSWORD = "t873Amu-:am";
 
 #define PIN_STEP      D2
 #define PIN_DIR       D3
@@ -451,20 +447,18 @@ void setup() {
   stepper.setMaxSpeed(SPEED_WORK);
   stepper.setAcceleration(ACCEL_WORK);
 
-  // WiFi STA
-  Serial.printf("Connexion à %s", WIFI_SSID);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 40) {
-    delay(500);
-    Serial.print(".");
-    attempts++;
-  }
-  Serial.println();
-  if (WiFi.status() == WL_CONNECTED) {
+  // WiFi via WiFiManager
+  // Premier démarrage : crée un AP "Diviseur-Setup", connectez-vous
+  // avec votre téléphone et entrez vos identifiants WiFi.
+  // Les démarrages suivants se reconnectent automatiquement.
+  WiFiManager wm;
+  Serial.println("WiFiManager — connexion en cours...");
+  if (wm.autoConnect("Diviseur-Setup")) {
     Serial.printf("Connecté ! IP : http://%s\n", WiFi.localIP().toString().c_str());
   } else {
-    Serial.println("Échec WiFi — vérifiez SSID/mot de passe dans diviseur.ino");
+    Serial.println("Échec WiFi — redémarrage dans 10 s...");
+    delay(10000);
+    ESP.restart();
   }
 
   // Routes
