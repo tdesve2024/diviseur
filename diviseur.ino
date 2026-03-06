@@ -29,17 +29,16 @@
 #define PIN_EN        D4
 #define PIN_UART      D5
 
-#define STEPS_PER_REV   200       // pas/tour moteur NEMA 14
-#define MICROSTEPS      16        // microstepping TMC2209
-#define GEAR_RATIO      40        // rapport diviseur Cowells RGB61
-#define MOTOR_CURRENT   600       // courant RMS (mA)
-#define R_SENSE         0.11f     // résistance de shunt TMC2209 (Ω)
-#define DRIVER_ADDR     0         // adresse UART (MS1=GND, MS2=GND)
+#define STEPS_PER_REV   200
+#define MICROSTEPS      16
+#define GEAR_RATIO      40
+#define MOTOR_CURRENT   600
+#define R_SENSE         0.11f
+#define DRIVER_ADDR     0
 
-#define SPEED_WORK      6400.0f   // vitesse normale (pas/s) ≈ 3 tr/min diviseur
-#define ACCEL_WORK      4000.0f   // accélération (pas/s²)
-#define SPEED_JOG       1600.0f   // vitesse jog page test (pas/s)
-// ===================================================================
+#define SPEED_WORK      6400.0f
+#define ACCEL_WORK      4000.0f
+#define SPEED_JOG       1600.0f
 
 const long STEPS_PER_TURN =
     (long)STEPS_PER_REV * MICROSTEPS * GEAR_RATIO;  // 128 000
@@ -49,13 +48,59 @@ TMC2209Stepper driver(&SerialTMC, R_SENSE, DRIVER_ADDR);
 AccelStepper   stepper(AccelStepper::DRIVER, PIN_STEP, PIN_DIR);
 WebServer      server(80);
 
-int  numDivisions = 6;
-long divOffset    = 0;      // divisions avancées depuis le zéro (signé, cumulatif)
-bool motorEnabled = false;
-bool jogMode      = false;  // true = vitesse jog active
+int  numDivisions    = 6;
+long divOffset       = 0;
+bool motorEnabled    = false;
+bool jogMode         = false;
+bool spreadCycleMode = false;
 
 // ===================================================================
-//  Page principale (PROGMEM)
+//  Diagnostic
+// ===================================================================
+#define NUM_DIAG_TESTS 10
+#define NUM_DIAG_STEPS 4
+
+enum DiagStatus : uint8_t { DS_PENDING=0, DS_OK=1, DS_FAIL=2, DS_ALERT=3 };
+
+struct DiagTest {
+  DiagStatus status;
+  int32_t    durationMs;
+  char       detail[100];
+};
+
+static const char* DIAG_IDS[NUM_DIAG_TESTS] = {
+  "T01","T02","T03","T04","T05","T06","T07","T08","T09","T10"
+};
+static const uint8_t DIAG_STEP_MAP[NUM_DIAG_TESTS] = {1,1,2,3,3,3,3,4,4,4};
+static const char* DIAG_NAMES[NUM_DIAG_TESTS] = {
+  "D\xc3\xa9marrage syst\xc3\xa8me",
+  "Connexion WiFi",
+  "Alimentation 5V (Buck)",
+  "UART \xe2\x86\x92 TMC2209",
+  "Config courant + \xc2\xb5stepping",
+  "Alimentation moteur VM",
+  "Broche EN (enable driver)",
+  "Sens de rotation",
+  "Pr\xc3\xa9cision microstepping",
+  "Temp\xc3\xa9rature driver"
+};
+static const char* STEP_TITLES[NUM_DIAG_STEPS] = {
+  "Arduino seul + USB",
+  "+ Alimentation 12V + Buck",
+  "+ TMC2209 (sans moteur)",
+  "+ Moteur NEMA 14"
+};
+static const char* STEP_DESCS[NUM_DIAG_STEPS] = {
+  "Alimenter via USB uniquement",
+  "Alim 12V \xe2\x86\x92 Buck \xe2\x86\x92 c\xc3\xa2ble USB-C \xe2\x86\x92 Nano ESP32",
+  "C\xc3\xa2bler le driver TMC2209 (STEP/DIR/EN/UART)",
+  "Brancher le moteur NEMA 14 au TMC2209"
+};
+
+DiagTest diagTests[NUM_DIAG_TESTS];
+
+// ===================================================================
+//  Page CONTRÔLEUR (PROGMEM)
 // ===================================================================
 const char PAGE_MAIN[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -66,255 +111,266 @@ const char PAGE_MAIN[] PROGMEM = R"rawliteral(
 <title>Diviseur RGB61</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:sans-serif;background:#1a1a2e;color:#eee;padding:16px;max-width:480px;margin:auto}
-h1{text-align:center;color:#e94560;margin-bottom:20px;font-size:1.4em;letter-spacing:.05em}
-.card{background:#16213e;border-radius:12px;padding:20px;margin-bottom:14px}
-.card h2{font-size:.9em;color:#a0c4ff;margin-bottom:14px;text-transform:uppercase;letter-spacing:.08em}
-.big{font-size:3.4em;text-align:center;color:#e94560;font-weight:bold;line-height:1}
-.sub{text-align:center;color:#888;font-size:.85em;margin-top:4px}
-.btn{display:inline-flex;align-items:center;justify-content:center;padding:14px 20px;
-     border:none;border-radius:10px;font-size:1.05em;cursor:pointer;font-weight:bold;margin:4px;transition:opacity .15s}
-.btn:active{opacity:.65}
-.btn-primary{background:#e94560;color:#fff}
-.btn-muted{background:#0f3460;color:#fff}
-.btn-nav{background:#533483;color:#fff;font-size:1.8em;padding:18px 36px}
-.row{display:flex;justify-content:center;flex-wrap:wrap;gap:6px;margin-top:10px}
-input[type=number]{background:#0f3460;border:1px solid #533483;color:#fff;
-                   padding:10px 12px;border-radius:8px;font-size:1em;width:110px}
-.status{text-align:center;color:#4caf50;margin-top:8px;font-size:.9em;min-height:1.2em}
-a.link{color:#a0c4ff;text-decoration:none;display:block;text-align:center;
-       margin-top:18px;padding:12px;background:#16213e;border-radius:10px}
-.moving{color:#ff9800;animation:blink 1s infinite}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f2f5;color:#1a2d3d;max-width:480px;margin:auto;min-height:100vh}
+.hdr{background:#1a2d3d;padding:14px 18px;display:flex;align-items:center;justify-content:space-between}
+.hdr h1{color:#fff;font-size:1.25em;font-weight:800;letter-spacing:.05em}
+.hdr p{color:#6b8cae;font-size:.7em;margin-top:3px}
+.badge{background:#2d6a9f;color:#fff;font-size:.72em;font-weight:700;padding:4px 10px;border-radius:20px}
+.sbar{background:#2d6a9f;padding:10px 18px;display:flex;align-items:center;gap:8px}
+.dot{width:9px;height:9px;border-radius:50%;background:#a8e6cf}
+.sbar span{color:#fff;font-weight:700;font-size:.88em;letter-spacing:.06em}
+.tabs{background:#1a2d3d;display:flex}
+.tab{flex:1;padding:13px 8px;text-align:center;color:#6b8cae;font-size:.75em;font-weight:700;letter-spacing:.08em;text-decoration:none;border-bottom:3px solid transparent;display:flex;align-items:center;justify-content:center;gap:5px}
+.tab.on{color:#fff;border-bottom-color:#2d6a9f}
+.pg{padding:14px}
+.card{background:#fff;border-radius:14px;padding:18px;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,.07)}
+.lbl{font-size:.68em;color:#8a9ab0;letter-spacing:.1em;font-weight:700;margin-bottom:14px}
+.big{text-align:center;margin-bottom:14px;line-height:1}
+.bign{font-size:3.8em;font-weight:800;color:#1a2d3d}
+.bigd{font-size:2em;font-weight:400;color:#b0bec5}
+hr{border:none;border-top:1px solid #eaeef2;margin:14px 0}
+.met{display:flex;text-align:center}
+.met>div{flex:1}
+.mv{font-size:1.05em;font-weight:700;color:#2d6a9f}
+.mv.or{color:#e67e22}
+.ml{font-size:.62em;color:#8a9ab0;letter-spacing:.08em;margin-top:3px}
+.nav{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.br{background:#1a2d3d;color:#fff;border:none;border-radius:12px;padding:18px;font-size:.95em;font-weight:800;cursor:pointer;letter-spacing:.06em;width:100%}
+.ba{background:#2d6a9f;color:#fff;border:none;border-radius:12px;padding:18px;font-size:.95em;font-weight:800;cursor:pointer;letter-spacing:.06em;width:100%}
+.bz{width:100%;background:#f0f2f5;color:#5a6a7a;border:none;border-radius:12px;padding:13px;font-size:.84em;font-weight:600;cursor:pointer;letter-spacing:.04em}
+.br:active,.ba:active,.bz:active{opacity:.7}
+.dc{display:flex;align-items:center;gap:8px}
+.pm{background:#f0f2f5;border:none;border-radius:10px;width:48px;height:48px;font-size:1.5em;font-weight:300;cursor:pointer;color:#1a2d3d;flex-shrink:0}
+.dv{flex:1;text-align:center}
+.dn{font-size:2.2em;font-weight:800;color:#1a2d3d;line-height:1}
+.dl{font-size:.62em;color:#8a9ab0;letter-spacing:.08em;margin-top:3px}
+.bl{background:#2d6a9f;border:none;border-radius:10px;width:48px;height:48px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.bl svg{width:18px;height:18px;fill:#fff}
+.mrow{display:flex;align-items:center;justify-content:space-between}
+.mn{font-size:1.05em;font-weight:700}
+.ms{font-size:.78em;color:#8a9ab0;margin-top:3px}
+.tg{width:46px;height:26px;background:#d0d5db;border-radius:13px;position:relative;cursor:pointer;transition:background .2s;flex-shrink:0}
+.tg.on{background:#2d6a9f}
+.tg::after{content:'';position:absolute;width:20px;height:20px;background:#fff;border-radius:50%;top:3px;left:3px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.tg.on::after{left:23px}
 </style>
 </head>
 <body>
-<h1>⚙ Diviseur Cowells RGB61</h1>
-
-<div class="card">
-  <h2>Position</h2>
-  <div class="big" id="divDisplay">0&nbsp;/&nbsp;6</div>
-  <div class="sub" id="stepDisplay">0 pas</div>
-  <div class="sub" id="movingLabel" style="margin-top:6px;min-height:1.2em"></div>
-  <div class="row" style="margin-top:16px;justify-content:center">
-    <svg width="160" height="160" viewBox="0 0 160 160">
-      <circle cx="80" cy="80" r="68" fill="none" stroke="#0f3460" stroke-width="14"/>
-      <circle id="arc" cx="80" cy="80" r="68" fill="none" stroke="#e94560" stroke-width="14"
-              stroke-dasharray="0 427" stroke-linecap="round"
-              transform="rotate(-90 80 80)" style="transition:stroke-dasharray .4s"/>
-      <text id="arcTxt" x="80" y="80" fill="#eee" font-size="30" font-weight="bold"
-            dominant-baseline="middle" text-anchor="middle">0</text>
-    </svg>
+<div class="hdr">
+  <div><h1>DIVISEUR</h1><p>Cowells RGB61 &middot; TMC2209 &middot; NEMA 14</p></div>
+  <div class="badge">WiFi</div>
+</div>
+<div class="sbar"><div class="dot"></div><span id="sbarTxt">PR&#202;T</span></div>
+<div class="tabs">
+  <a class="tab on" href="/">&#9658; CONTR&#212;LEUR</a>
+  <a class="tab" href="/diag">&#9658; DIAGNOSTIC</a>
+</div>
+<div class="pg">
+  <div class="card">
+    <div class="lbl">DIVISION COURANTE</div>
+    <div class="big">
+      <span class="bign" id="dc">0</span><span class="bigd"> /&thinsp;<span id="dt">6</span></span>
+    </div>
+    <hr>
+    <div class="met">
+      <div><div class="mv" id="an">0.0&deg;</div><div class="ml">ANGLE ACTUEL</div></div>
+      <div><div class="mv" id="pa">60.0&deg;</div><div class="ml">PAS / DIVISION</div></div>
+      <div><div class="mv or" id="tp">0&deg;C</div><div class="ml">TEMP. DRIVER</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="nav">
+      <button class="br" onclick="mv(-1)">&#9664; RECUL</button>
+      <button class="ba" onclick="mv(1)">&#9654; AVANCE</button>
+    </div>
+    <button class="bz" onclick="home()">&#8635; REMETTRE &Agrave; Z&Eacute;RO</button>
+  </div>
+  <div class="card">
+    <div class="lbl">NOMBRE DE DIVISIONS</div>
+    <div class="dc">
+      <button class="pm" onclick="chg(-1)">&#8722;</button>
+      <div class="dv"><div class="dn" id="nd">6</div><div class="dl">DIVISIONS</div></div>
+      <button class="pm" onclick="chg(1)">+</button>
+      <button class="bl" onclick="dlst()">
+        <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="2" rx="1"/><rect x="3" y="11" width="18" height="2" rx="1"/><rect x="3" y="17" width="18" height="2" rx="1"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="lbl">MODE DRIVER</div>
+    <div class="mrow">
+      <div><div class="mn" id="mdn">StealthChop</div><div class="ms" id="mds">Silencieux</div></div>
+      <div class="tg" id="mdtg" onclick="tgm()"></div>
+    </div>
   </div>
 </div>
-
-<div class="card">
-  <h2>Navigation</h2>
-  <div class="row">
-    <button class="btn btn-nav" onclick="moveDivision(-1)">&#9664;</button>
-    <button class="btn btn-nav" onclick="moveDivision(1)">&#9654;</button>
-  </div>
-  <div class="row">
-    <button class="btn btn-muted" onclick="goHome()">⌂ Zéro ici</button>
-  </div>
-</div>
-
-<div class="card">
-  <h2>Nombre de divisions</h2>
-  <div class="row" style="align-items:center">
-    <input type="number" id="divInput" min="2" max="360" value="6">
-    <button class="btn btn-primary" onclick="setDivisions()">Appliquer</button>
-  </div>
-  <div class="status" id="divStatus"></div>
-</div>
-
-<a class="link" href="/test">&#128295; Page de test</a>
-
 <script>
-const CIRC = 2 * Math.PI * 68;
-
-function updateStatus() {
-  fetch('/api/status').then(r => r.json()).then(d => {
-    document.getElementById('divDisplay').innerHTML = d.currentDiv + '&nbsp;/&nbsp;' + d.divisions;
-    document.getElementById('stepDisplay').textContent = d.steps + ' pas';
-    document.getElementById('arcTxt').textContent = d.currentDiv;
-    document.getElementById('divInput').value = d.divisions;
-    document.getElementById('movingLabel').className = d.moving ? 'sub moving' : 'sub';
-    document.getElementById('movingLabel').textContent = d.moving ? '⟳ Déplacement...' : '';
-    const frac = d.divisions > 0 ? d.currentDiv / d.divisions : 0;
-    document.getElementById('arc').setAttribute('stroke-dasharray',
-      (frac * CIRC).toFixed(1) + ' ' + CIRC.toFixed(1));
-  }).catch(() => {});
+let sc=false;
+function upd(){
+  fetch('/api/status').then(r=>r.json()).then(d=>{
+    document.getElementById('dc').textContent=d.currentDiv;
+    document.getElementById('dt').textContent=d.divisions;
+    document.getElementById('nd').textContent=d.divisions;
+    const a=d.divisions>0?(d.currentDiv*360/d.divisions).toFixed(1):'0.0';
+    const p=d.divisions>0?(360/d.divisions).toFixed(1):'0.0';
+    document.getElementById('an').textContent=a+'\u00b0';
+    document.getElementById('pa').textContent=p+'\u00b0';
+    document.getElementById('tp').textContent=(d.temp||0)+'\u00b0C';
+    document.getElementById('sbarTxt').textContent=d.moving?'EN MOUVEMENT':'PR\u00caT';
+    if(d.spreadCycle!==undefined&&d.spreadCycle!==sc){sc=d.spreadCycle;renderMode();}
+  }).catch(()=>{});
 }
-
-function moveDivision(dir) {
-  fetch('/api/move', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({dir})
-  }).then(() => setTimeout(updateStatus, 300));
+function renderMode(){
+  document.getElementById('mdn').textContent=sc?'SpreadCycle':'StealthChop';
+  document.getElementById('mds').textContent=sc?'Couple maximum':'Silencieux';
+  document.getElementById('mdtg').className='tg'+(sc?' on':'');
 }
-
-function goHome() {
-  fetch('/api/home', {method: 'POST'}).then(() => updateStatus());
+function mv(dir){
+  fetch('/api/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dir})})
+    .then(()=>setTimeout(upd,300));
 }
-
-function setDivisions() {
-  const n = parseInt(document.getElementById('divInput').value);
-  if (n < 2 || n > 360) {
-    document.getElementById('divStatus').textContent = '✗ Valeur invalide (2–360)';
-    return;
-  }
-  fetch('/api/divisions', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({n})
-  }).then(r => r.json()).then(d => {
-    document.getElementById('divStatus').textContent =
-      d.ok ? '✓ ' + n + ' divisions appliquées — position remise à zéro' : '✗ Erreur';
-    updateStatus();
-  });
+function home(){fetch('/api/home',{method:'POST'}).then(()=>upd());}
+function chg(d){
+  const n=Math.min(360,Math.max(2,parseInt(document.getElementById('nd').textContent)+d));
+  fetch('/api/divisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({n})})
+    .then(()=>upd());
 }
-
-setInterval(updateStatus, 1500);
-updateStatus();
+function dlst(){
+  const pr=[2,3,4,5,6,7,8,9,10,12,15,18,20,24,30,36,40,45,60,72,90,120,180,360];
+  const c=parseInt(document.getElementById('nd').textContent);
+  const v=prompt('Valeurs courantes\u00a0: '+pr.join(', ')+'\n\nNombre de divisions\u00a0:',c);
+  if(!v)return;
+  const n=parseInt(v);
+  if(n>=2&&n<=360)
+    fetch('/api/divisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({n})})
+      .then(()=>upd());
+}
+function tgm(){
+  sc=!sc;renderMode();
+  fetch('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spreadCycle:sc})});
+}
+setInterval(upd,1500);upd();
 </script>
 </body>
 </html>
 )rawliteral";
 
 // ===================================================================
-//  Page de test (PROGMEM)
+//  Page DIAGNOSTIC (PROGMEM)
 // ===================================================================
-const char PAGE_TEST[] PROGMEM = R"rawliteral(
+const char PAGE_DIAG[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Test — Diviseur RGB61</title>
+<title>Diagnostic — Diviseur RGB61</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:sans-serif;background:#1a1a2e;color:#eee;padding:16px;max-width:480px;margin:auto}
-h1{text-align:center;color:#ff9800;margin-bottom:20px;font-size:1.4em}
-.card{background:#16213e;border-radius:12px;padding:20px;margin-bottom:14px}
-.card h2{font-size:.9em;color:#a0c4ff;margin-bottom:14px;text-transform:uppercase;letter-spacing:.08em}
-.btn{display:inline-flex;align-items:center;justify-content:center;padding:12px 16px;
-     border:none;border-radius:10px;font-size:.95em;cursor:pointer;font-weight:bold;margin:3px;transition:opacity .15s}
-.btn:active{opacity:.65}
-.btn-on{background:#4caf50;color:#fff}
-.btn-off{background:#f44336;color:#fff}
-.btn-jog{background:#0f3460;color:#fff;min-width:58px}
-.btn-turn{background:#533483;color:#fff}
-.btn-stop{background:#ff9800;color:#000;font-size:1.1em;padding:14px 28px}
-.row{display:flex;justify-content:center;flex-wrap:wrap;gap:4px;margin-top:8px}
-.info{background:#0a0a1a;border-radius:8px;padding:12px;font-size:.85em;line-height:1.8}
-.info .val{color:#ff9800;font-weight:bold}
-.led{width:14px;height:14px;border-radius:50%;display:inline-block;vertical-align:middle;margin-right:6px}
-.led-on{background:#4caf50;box-shadow:0 0 8px #4caf50}
-.led-off{background:#555}
-.log{background:#0a0a1a;border-radius:6px;padding:10px;font-size:.78em;
-     height:110px;overflow-y:auto;font-family:monospace;margin-top:8px;color:#aaa}
-a.link{color:#a0c4ff;text-decoration:none;display:block;text-align:center;
-       margin-top:18px;padding:12px;background:#16213e;border-radius:10px}
+body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f2f5;color:#1a2d3d;max-width:480px;margin:auto;min-height:100vh}
+.hdr{background:#1a2d3d;padding:14px 18px;display:flex;align-items:center;justify-content:space-between}
+.hdr h1{color:#fff;font-size:1.25em;font-weight:800;letter-spacing:.05em}
+.hdr p{color:#6b8cae;font-size:.7em;margin-top:3px}
+.badge{background:#2d6a9f;color:#fff;font-size:.72em;font-weight:700;padding:4px 10px;border-radius:20px}
+.sbar{background:#2d6a9f;padding:10px 18px;display:flex;align-items:center;gap:8px}
+.dot{width:9px;height:9px;border-radius:50%;background:#a8e6cf}
+.sbar span{color:#fff;font-weight:700;font-size:.88em;letter-spacing:.06em}
+.tabs{background:#1a2d3d;display:flex}
+.tab{flex:1;padding:13px 8px;text-align:center;color:#6b8cae;font-size:.75em;font-weight:700;letter-spacing:.08em;text-decoration:none;border-bottom:3px solid transparent;display:flex;align-items:center;justify-content:center;gap:5px}
+.tab.on{color:#fff;border-bottom-color:#2d6a9f}
+.pg{padding:14px}
+.sum{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+.sb{background:#fff;border-radius:12px;padding:14px 6px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.06)}
+.sn{font-size:1.9em;font-weight:800;line-height:1}
+.sl{font-size:.6em;font-weight:700;letter-spacing:.08em;margin-top:4px}
+.s-ok .sn,.s-ok .sl{color:#27ae60}
+.s-fl .sn,.s-fl .sl{color:#e74c3c}
+.s-al .sn,.s-al .sl{color:#e67e22}
+.s-pe .sn,.s-pe .sl{color:#95a5a6}
+.card{background:#fff;border-radius:14px;padding:16px;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,.07)}
+.shdr{display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}
+.sbdg{background:#1a2d3d;color:#fff;font-size:.65em;font-weight:800;padding:5px 9px;border-radius:6px;letter-spacing:.05em;white-space:nowrap;margin-top:2px}
+.si{flex:1;min-width:0}
+.st{font-weight:700;font-size:.9em;color:#1a2d3d}
+.sd{font-size:.72em;color:#8a9ab0;margin-top:2px;line-height:1.3}
+.btest{background:#2d6a9f;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-size:.75em;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.btest:active{opacity:.7}
+.ti{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border-radius:10px;margin-bottom:7px;border-left:4px solid #e8ecf0;background:#fafbfc}
+.ti-ok{border-left-color:#27ae60;background:#f0fdf4}
+.ti-fl{border-left-color:#e74c3c;background:#fff5f5}
+.ti-al{border-left-color:#e67e22;background:#fff8f0}
+.tid{font-size:.68em;color:#8a9ab0;font-weight:600;min-width:26px;padding-top:2px;flex-shrink:0}
+.tbdg{font-size:.65em;font-weight:700;padding:2px 6px;border-radius:5px;letter-spacing:.05em;white-space:nowrap;flex-shrink:0}
+.bdg-ok{background:#d4edda;color:#27ae60}
+.bdg-fl{background:#f8d7da;color:#e74c3c}
+.bdg-al{background:#fde8d4;color:#e67e22}
+.bdg-pe{background:#eff0f1;color:#95a5a6}
+.tb{flex:1;min-width:0}
+.tn{font-weight:600;font-size:.85em;color:#1a2d3d}
+.td{font-size:.72em;color:#8a9ab0;margin-top:3px;line-height:1.4}
+.tdr{font-size:.68em;color:#b0bec5;flex-shrink:0;padding-top:2px;white-space:nowrap}
 </style>
 </head>
 <body>
-<h1>&#128295; Page de test</h1>
-
-<div class="card">
-  <h2>Moteur</h2>
-  <div style="text-align:center">
-    <span class="led" id="motorLed"></span>
-    <span id="motorState">—</span>
-  </div>
-  <div class="row" style="margin-top:12px">
-    <button class="btn btn-on"  onclick="enableMotor(true)">Activer</button>
-    <button class="btn btn-off" onclick="enableMotor(false)">Désactiver</button>
-    <button class="btn btn-stop" onclick="stopMotor()">■ Stop</button>
-  </div>
+<div class="hdr">
+  <div><h1>DIVISEUR</h1><p>Cowells RGB61 &middot; TMC2209 &middot; NEMA 14</p></div>
+  <div class="badge">WiFi</div>
 </div>
-
-<div class="card">
-  <h2>Jog manuel (pas)</h2>
-  <div class="row">
-    <button class="btn btn-jog" onclick="jog(-1000)">−1000</button>
-    <button class="btn btn-jog" onclick="jog(-100)">−100</button>
-    <button class="btn btn-jog" onclick="jog(-10)">−10</button>
-    <button class="btn btn-jog" onclick="jog(-1)">−1</button>
-    <button class="btn btn-jog" onclick="jog(1)">+1</button>
-    <button class="btn btn-jog" onclick="jog(10)">+10</button>
-    <button class="btn btn-jog" onclick="jog(100)">+100</button>
-    <button class="btn btn-jog" onclick="jog(1000)">+1000</button>
-  </div>
-  <div class="row" style="margin-top:6px">
-    <button class="btn btn-turn" onclick="jog(-6400)">◀ ½ tour</button>
-    <button class="btn btn-turn" onclick="jog(-12800)">◀ 1 tour</button>
-    <button class="btn btn-turn" onclick="jog(6400)">½ tour ▶</button>
-    <button class="btn btn-turn" onclick="jog(12800)">1 tour ▶</button>
-  </div>
+<div class="sbar"><div class="dot"></div><span>PR&#202;T</span></div>
+<div class="tabs">
+  <a class="tab" href="/">&#9658; CONTR&#212;LEUR</a>
+  <a class="tab on" href="/diag">&#9658; DIAGNOSTIC</a>
 </div>
-
-<div class="card">
-  <h2>État système</h2>
-  <div class="info">
-    Position absolue&nbsp;: <span class="val" id="stepPos">—</span> pas<br>
-    Moteur&nbsp;: <span class="val" id="motorInfo">—</span><br>
-    Déplacement&nbsp;: <span class="val" id="movingInfo">—</span><br>
-    WiFi RSSI&nbsp;: <span class="val" id="rssi">—</span> dBm<br>
-    Uptime&nbsp;: <span class="val" id="uptime">—</span>
+<div class="pg">
+  <div class="sum">
+    <div class="sb s-ok"><div class="sn" id="cok">0</div><div class="sl">OK</div></div>
+    <div class="sb s-fl"><div class="sn" id="cfl">0</div><div class="sl">FAIL</div></div>
+    <div class="sb s-al"><div class="sn" id="cal">0</div><div class="sl">ALERTE</div></div>
+    <div class="sb s-pe"><div class="sn" id="cpe">0</div><div class="sl">EN ATT.</div></div>
   </div>
-  <div class="log" id="logDiv">Prêt...<br></div>
+  <div id="steps"></div>
 </div>
-
-<a class="link" href="/">← Retour à la page principale</a>
-
 <script>
-function log(msg) {
-  const d = document.getElementById('logDiv');
-  const t = new Date().toLocaleTimeString('fr', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
-  d.innerHTML += t + ' ' + msg + '<br>';
-  d.scrollTop = d.scrollHeight;
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+function load(){
+  fetch('/api/diag').then(r=>r.json()).then(d=>{
+    document.getElementById('cok').textContent=d.counts.ok;
+    document.getElementById('cfl').textContent=d.counts.fail;
+    document.getElementById('cal').textContent=d.counts.alert;
+    document.getElementById('cpe').textContent=d.counts.pending;
+    const sc=document.getElementById('steps');
+    sc.innerHTML='';
+    d.steps.forEach(s=>{
+      const c=document.createElement('div');
+      c.className='card';
+      let h=`<div class="shdr">
+        <div class="sbdg">\u00c9TAPE ${s.n}</div>
+        <div class="si"><div class="st">${esc(s.title)}</div><div class="sd">${esc(s.desc)}</div></div>
+        <button class="btest" onclick="run(${s.n})">&#9654; Tester</button>
+      </div>`;
+      d.tests.filter(t=>t.step===s.n).forEach(t=>{
+        const cls=t.status===1?'ti-ok':t.status===2?'ti-fl':t.status===3?'ti-al':'';
+        const bc=t.status===1?'bdg-ok':t.status===2?'bdg-fl':t.status===3?'bdg-al':'bdg-pe';
+        const bt=t.status===1?'OK':t.status===2?'FAIL':t.status===3?'ALERTE':'...';
+        const dur=t.duration>=0?`<div class="tdr">${t.duration}ms</div>`:'';
+        const det=t.detail?`<div class="td">${esc(t.detail)}</div>`:'';
+        h+=`<div class="ti ${cls}">
+          <div class="tid">${t.id}</div>
+          <div class="tbdg ${bc}">${bt}</div>
+          <div class="tb"><div class="tn">${esc(t.name)}</div>${det}</div>
+          ${dur}
+        </div>`;
+      });
+      c.innerHTML=h;
+      sc.appendChild(c);
+    });
+  }).catch(()=>{});
 }
-
-function updateStatus() {
-  fetch('/api/status').then(r => r.json()).then(d => {
-    document.getElementById('stepPos').textContent = d.steps;
-    document.getElementById('motorInfo').textContent = d.enabled ? 'Activé ✓' : 'Désactivé';
-    document.getElementById('movingInfo').textContent = d.moving ? '⟳ En cours' : 'Arrêté';
-    document.getElementById('rssi').textContent = d.rssi;
-    document.getElementById('uptime').textContent = Math.floor(d.uptime / 1000) + ' s';
-    const led = document.getElementById('motorLed');
-    led.className = 'led ' + (d.enabled ? 'led-on' : 'led-off');
-    document.getElementById('motorState').textContent = d.enabled ? 'Activé' : 'Désactivé';
-  }).catch(() => {});
+function run(n){
+  fetch('/api/diag/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({step:n})})
+    .then(()=>setTimeout(load,400));
 }
-
-function enableMotor(en) {
-  fetch('/api/enable', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({enable: en})
-  }).then(() => { log(en ? '▶ Moteur activé' : '■ Moteur désactivé'); updateStatus(); });
-}
-
-function stopMotor() {
-  fetch('/api/stop', {method: 'POST'}).then(() => { log('⚠ Stop moteur'); updateStatus(); });
-}
-
-function jog(steps) {
-  fetch('/api/jog', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({steps})
-  }).then(() => {
-    log('Jog ' + (steps > 0 ? '+' : '') + steps + ' pas');
-    setTimeout(updateStatus, 400);
-  });
-}
-
-setInterval(updateStatus, 1500);
-updateStatus();
+setInterval(load,5000);load();
 </script>
 </body>
 </html>
@@ -325,7 +381,7 @@ updateStatus();
 // ===================================================================
 void setMotorEnabled(bool en) {
   motorEnabled = en;
-  digitalWrite(PIN_EN, en ? LOW : HIGH);  // EN actif LOW
+  digitalWrite(PIN_EN, en ? LOW : HIGH);
 }
 
 int currentDivision() {
@@ -344,24 +400,175 @@ void doMoveDivision(int dir) {
 }
 
 // ===================================================================
+//  Diagnostic — exécution des tests
+// ===================================================================
+void runDiagStep(int step) {
+  for (int i = 0; i < NUM_DIAG_TESTS; i++) {
+    if (DIAG_STEP_MAP[i] != step) continue;
+    unsigned long t0 = millis();
+    diagTests[i].detail[0] = 0;
+
+    switch (i) {
+      case 0: {  // T01 — Démarrage système
+        uint32_t heap = ESP.getFreeHeap();
+        diagTests[i].status = (heap > 50000) ? DS_OK : DS_ALERT;
+        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+          "CPU OK \xe2\x80\x94 heap libre\u00a0: %u kB \xe2\x80\x94 %lu ms depuis boot",
+          heap / 1024, millis());
+        break;
+      }
+      case 1: {  // T02 — Connexion WiFi
+        if (WiFi.status() == WL_CONNECTED) {
+          diagTests[i].status = DS_OK;
+          snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+            "Connect\xc3\xa9 \xc3\xa0 \"%s\" \xe2\x80\x94 IP %s RSSI=%d dBm",
+            WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), WiFi.RSSI());
+        } else {
+          diagTests[i].status = DS_FAIL;
+          snprintf(diagTests[i].detail, sizeof(diagTests[i].detail), "Non connect\xc3\xa9");
+        }
+        break;
+      }
+      case 2: {  // T03 — Buck 5V (vérification manuelle)
+        diagTests[i].status = DS_ALERT;
+        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+          "V\xc3\xa9rification manuelle \xe2\x80\x94 mesurer 5V sur le rail Buck");
+        break;
+      }
+      case 3: {  // T04 — UART → TMC2209
+        driver.begin();
+        diagTests[i].status = DS_ALERT;
+        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+          "UART TX configur\xc3\xa9 \xe2\x80\x94 pas de readback (v\xc3\xa9rifier c\xc3\xa2blage)");
+        break;
+      }
+      case 4: {  // T05 — Config courant + µstepping
+        driver.rms_current(MOTOR_CURRENT);
+        driver.microsteps(MICROSTEPS);
+        diagTests[i].status = DS_OK;
+        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+          "Courant\u00a0: %d mA RMS \xe2\x80\x94 Microstepping\u00a0: %d\xc3\x97",
+          MOTOR_CURRENT, MICROSTEPS);
+        break;
+      }
+      case 5: {  // T06 — Alimentation moteur VM
+        diagTests[i].status = DS_ALERT;
+        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+          "V\xc3\xa9rification manuelle \xe2\x80\x94 mesurer 12V sur VM driver");
+        break;
+      }
+      case 6: {  // T07 — Broche EN
+        digitalWrite(PIN_EN, LOW);
+        delay(10);
+        diagTests[i].status = DS_OK;
+        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+          "Broche EN activ\xc3\xa9e (actif LOW) \xe2\x80\x94 driver pr\xc3\xaat");
+        setMotorEnabled(false);
+        break;
+      }
+      case 7: {  // T08 — Sens de rotation
+        diagTests[i].status = DS_ALERT;
+        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+          "V\xc3\xa9rifier visuellement le sens apr\xc3\xa8s connexion moteur");
+        break;
+      }
+      case 8: {  // T09 — Précision microstepping
+        diagTests[i].status = DS_ALERT;
+        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+          "Test de pr\xc3\xa9cision requis apr\xc3\xa8s montage complet");
+        break;
+      }
+      case 9: {  // T10 — Température driver
+        diagTests[i].status = DS_ALERT;
+        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+          "Lecture temp\xc3\xa9rature n\xc3\xa9cessite RX UART \xe2\x80\x94 non impl\xc3\xa9ment\xc3\xa9");
+        break;
+      }
+    }
+    diagTests[i].durationMs = (int32_t)(millis() - t0);
+  }
+}
+
+// ===================================================================
 //  Routes Web
 // ===================================================================
 void handleRoot() { server.send_P(200, "text/html", PAGE_MAIN); }
-void handleTest() { server.send_P(200, "text/html", PAGE_TEST); }
+void handleDiagPage() { server.send_P(200, "text/html", PAGE_DIAG); }
 
 void handleStatus() {
-  char json[256];
+  char json[320];
   snprintf(json, sizeof(json),
     "{\"divisions\":%d,\"currentDiv\":%d,\"steps\":%ld,"
-    "\"enabled\":%s,\"moving\":%s,\"rssi\":%d,\"uptime\":%lu}",
+    "\"enabled\":%s,\"moving\":%s,\"rssi\":%d,\"uptime\":%lu,"
+    "\"temp\":0,\"spreadCycle\":%s}",
     numDivisions,
     currentDivision(),
     stepper.currentPosition(),
     motorEnabled ? "true" : "false",
     stepper.isRunning() ? "true" : "false",
     WiFi.RSSI(),
-    millis());
+    millis(),
+    spreadCycleMode ? "true" : "false");
   server.send(200, "application/json", json);
+}
+
+void handleDiagAPI() {
+  // Compter les statuts
+  int cOk=0, cFl=0, cAl=0, cPe=0;
+  for (int i=0; i<NUM_DIAG_TESTS; i++) {
+    switch (diagTests[i].status) {
+      case DS_OK:    cOk++; break;
+      case DS_FAIL:  cFl++; break;
+      case DS_ALERT: cAl++; break;
+      default:       cPe++; break;
+    }
+  }
+
+  static char buf[3072];
+  int pos = 0;
+
+  pos += snprintf(buf+pos, sizeof(buf)-pos,
+    "{\"counts\":{\"ok\":%d,\"fail\":%d,\"alert\":%d,\"pending\":%d},\"steps\":[",
+    cOk, cFl, cAl, cPe);
+
+  for (int s=1; s<=NUM_DIAG_STEPS; s++) {
+    if (s > 1) buf[pos++] = ',';
+    pos += snprintf(buf+pos, sizeof(buf)-pos,
+      "{\"n\":%d,\"title\":\"%s\",\"desc\":\"%s\"}",
+      s, STEP_TITLES[s-1], STEP_DESCS[s-1]);
+  }
+
+  pos += snprintf(buf+pos, sizeof(buf)-pos, "],\"tests\":[");
+
+  for (int i=0; i<NUM_DIAG_TESTS; i++) {
+    if (i > 0) buf[pos++] = ',';
+    // Échapper les guillemets dans le détail
+    char det[120]; int j=0;
+    const char* src = diagTests[i].detail;
+    for (int k=0; src[k] && j<117; k++) {
+      if (src[k]=='"') { det[j++]='\\'; det[j++]='"'; }
+      else det[j++]=src[k];
+    }
+    det[j]=0;
+    pos += snprintf(buf+pos, sizeof(buf)-pos,
+      "{\"id\":\"%s\",\"step\":%d,\"name\":\"%s\",\"status\":%d,\"duration\":%d,\"detail\":\"%s\"}",
+      DIAG_IDS[i], DIAG_STEP_MAP[i], DIAG_NAMES[i],
+      (int)diagTests[i].status, (int)diagTests[i].durationMs, det);
+  }
+
+  pos += snprintf(buf+pos, sizeof(buf)-pos, "]}");
+  server.send(200, "application/json", buf);
+}
+
+void handleDiagRun() {
+  if (!server.hasArg("plain")) { server.send(400); return; }
+  String body = server.arg("plain");
+  int idx = body.indexOf("\"step\":");
+  if (idx < 0) { server.send(400); return; }
+  int step = body.substring(idx + 7).toInt();
+  if (step < 1 || step > NUM_DIAG_STEPS) { server.send(400); return; }
+  runDiagStep(step);
+  server.send(200, "application/json", "{\"ok\":true}");
 }
 
 void handleSetDivisions() {
@@ -421,6 +628,14 @@ void handleJog() {
   server.send(200, "application/json", "{\"ok\":true}");
 }
 
+void handleMode() {
+  if (!server.hasArg("plain")) { server.send(400); return; }
+  spreadCycleMode = server.arg("plain").indexOf("true") != -1;
+  driver.en_spreadCycle(spreadCycleMode);
+  if (!spreadCycleMode) driver.pwm_autoscale(true);
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
 // ===================================================================
 //  Setup & Loop
 // ===================================================================
@@ -428,51 +643,60 @@ void setup() {
   Serial.begin(115200);
   Serial.println("\n=== Diviseur Cowells RGB61 ===");
 
+  // Initialiser les tests en état pending
+  for (int i = 0; i < NUM_DIAG_TESTS; i++) {
+    diagTests[i].status = DS_PENDING;
+    diagTests[i].durationMs = -1;
+    diagTests[i].detail[0] = 0;
+  }
+
   // GPIO
   pinMode(PIN_EN, OUTPUT);
   setMotorEnabled(false);
 
-  // TMC2209 via UART (TX seulement — write-only pour la configuration)
+  // TMC2209 via UART (TX uniquement)
   SerialTMC.begin(115200, SERIAL_8N1, -1, PIN_UART);
   delay(100);
   driver.begin();
-  driver.toff(5);                      // Activer le driver
-  driver.rms_current(MOTOR_CURRENT);   // Courant RMS
-  driver.microsteps(MICROSTEPS);       // 16× microstepping via UART
-  driver.en_spreadCycle(false);        // StealthChop (silencieux)
-  driver.pwm_autoscale(true);          // Autoscale du PWM
-  Serial.println("TMC2209 configuré");
+  driver.toff(5);
+  driver.rms_current(MOTOR_CURRENT);
+  driver.microsteps(MICROSTEPS);
+  driver.en_spreadCycle(false);   // StealthChop
+  driver.pwm_autoscale(true);
+  Serial.println("TMC2209 configur\xc3\xa9");
 
   // AccelStepper
   stepper.setMaxSpeed(SPEED_WORK);
   stepper.setAcceleration(ACCEL_WORK);
 
   // WiFi via WiFiManager
-  // Premier démarrage : crée un AP "Diviseur-Setup", connectez-vous
-  // avec votre téléphone et entrez vos identifiants WiFi.
-  // Les démarrages suivants se reconnectent automatiquement.
   WiFiManager wm;
-  Serial.println("WiFiManager — connexion en cours...");
+  Serial.println("WiFiManager \xe2\x80\x94 connexion en cours...");
   if (wm.autoConnect("Diviseur-Setup")) {
-    Serial.printf("Connecté ! IP : http://%s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("Connect\xc3\xa9\u00a0! IP\u00a0: http://%s\n", WiFi.localIP().toString().c_str());
+    // Lancer automatiquement les tests de l'étape 1
+    runDiagStep(1);
   } else {
-    Serial.println("Échec WiFi — redémarrage dans 10 s...");
+    Serial.println("\xc3\x89chec WiFi \xe2\x80\x94 red\xc3\xa9marrage dans 10 s...");
     delay(10000);
     ESP.restart();
   }
 
   // Routes
   server.on("/",              HTTP_GET,  handleRoot);
-  server.on("/test",          HTTP_GET,  handleTest);
+  server.on("/diag",          HTTP_GET,  handleDiagPage);
   server.on("/api/status",    HTTP_GET,  handleStatus);
+  server.on("/api/diag",      HTTP_GET,  handleDiagAPI);
+  server.on("/api/diag/run",  HTTP_POST, handleDiagRun);
   server.on("/api/divisions", HTTP_POST, handleSetDivisions);
   server.on("/api/move",      HTTP_POST, handleMove);
   server.on("/api/home",      HTTP_POST, handleHome);
   server.on("/api/enable",    HTTP_POST, handleEnable);
   server.on("/api/stop",      HTTP_POST, handleStop);
   server.on("/api/jog",       HTTP_POST, handleJog);
+  server.on("/api/mode",      HTTP_POST, handleMode);
   server.begin();
-  Serial.println("Serveur web démarré");
+  Serial.println("Serveur web d\xc3\xa9marr\xc3\xa9");
 }
 
 void loop() {
