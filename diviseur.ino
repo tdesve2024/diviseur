@@ -153,6 +153,8 @@ hr{border:none;border-top:1px solid #eaeef2;margin:14px 0}
 .tg.on{background:#2d6a9f}
 .tg::after{content:'';position:absolute;width:20px;height:20px;background:#fff;border-radius:50%;top:3px;left:3px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.25)}
 .tg.on::after{left:23px}
+.bst{width:100%;background:#c0392b;color:#fff;border:none;border-radius:12px;padding:14px;font-size:.95em;font-weight:800;cursor:pointer;letter-spacing:.06em}
+.bst:active{opacity:.7}
 </style>
 </head>
 <body>
@@ -175,7 +177,7 @@ hr{border:none;border-top:1px solid #eaeef2;margin:14px 0}
     <div class="met">
       <div><div class="mv" id="an">0.0&deg;</div><div class="ml">ANGLE ACTUEL</div></div>
       <div><div class="mv" id="pa">60.0&deg;</div><div class="ml">PAS / DIVISION</div></div>
-      <div><div class="mv or" id="tp">0&deg;C</div><div class="ml">TEMP. DRIVER</div></div>
+      <div><div class="mv or" id="tp">OK</div><div class="ml">TEMP. DRIVER</div></div>
     </div>
   </div>
   <div class="card">
@@ -183,7 +185,8 @@ hr{border:none;border-top:1px solid #eaeef2;margin:14px 0}
       <button class="br" onclick="mv(-1)">&#9664; RECUL</button>
       <button class="ba" onclick="mv(1)">&#9654; AVANCE</button>
     </div>
-    <button class="bz" onclick="home()">&#8635; REMETTRE &Agrave; Z&Eacute;RO</button>
+    <button class="bz" onclick="home()" style="margin-bottom:8px">&#8635; REMETTRE &Agrave; Z&Eacute;RO</button>
+    <button class="bst" id="bstop" onclick="stopMotor()">&#9632; STOP</button>
   </div>
   <div class="card">
     <div class="lbl">NOMBRE DE DIVISIONS</div>
@@ -198,14 +201,19 @@ hr{border:none;border-top:1px solid #eaeef2;margin:14px 0}
   </div>
   <div class="card">
     <div class="lbl">MODE DRIVER</div>
-    <div class="mrow">
+    <div class="mrow" style="margin-bottom:14px">
       <div><div class="mn" id="mdn">StealthChop</div><div class="ms" id="mds">Silencieux</div></div>
       <div class="tg" id="mdtg" onclick="tgm()"></div>
+    </div>
+    <div class="mrow">
+      <div><div class="mn" id="men">Moteur</div><div class="ms" id="mes">D\u00e9sactiv\u00e9</div></div>
+      <div class="tg" id="metg" onclick="tge()"></div>
     </div>
   </div>
 </div>
 <script>
-let sc=false;
+let sc=false,en=false;
+const TEMP_LABELS=['OK','CHAUD','STOP'];
 function upd(){
   fetch('/api/status').then(r=>r.json()).then(d=>{
     document.getElementById('dc').textContent=d.currentDiv;
@@ -215,9 +223,13 @@ function upd(){
     const p=d.divisions>0?(360/d.divisions).toFixed(1):'0.0';
     document.getElementById('an').textContent=a+'\u00b0';
     document.getElementById('pa').textContent=p+'\u00b0';
-    document.getElementById('tp').textContent=(d.temp||0)+'\u00b0C';
+    const t=d.temp||0;
+    const te=document.getElementById('tp');
+    te.textContent=TEMP_LABELS[t]||'?';
+    te.style.color=t===2?'#c0392b':t===1?'#e67e22':'';
     document.getElementById('sbarTxt').textContent=d.moving?'EN MOUVEMENT':'PR\u00caT';
     if(d.spreadCycle!==undefined&&d.spreadCycle!==sc){sc=d.spreadCycle;renderMode();}
+    if(d.enabled!==undefined&&d.enabled!==en){en=d.enabled;renderEnable();}
   }).catch(()=>{});
 }
 function renderMode(){
@@ -225,11 +237,16 @@ function renderMode(){
   document.getElementById('mds').textContent=sc?'Couple maximum':'Silencieux';
   document.getElementById('mdtg').className='tg'+(sc?' on':'');
 }
+function renderEnable(){
+  document.getElementById('mes').textContent=en?'Activ\u00e9':'D\u00e9sactiv\u00e9';
+  document.getElementById('metg').className='tg'+(en?' on':'');
+}
 function mv(dir){
   fetch('/api/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dir})})
     .then(()=>setTimeout(upd,300));
 }
 function home(){fetch('/api/home',{method:'POST'}).then(()=>upd());}
+function stopMotor(){fetch('/api/stop',{method:'POST'}).then(()=>upd());}
 function chg(d){
   const n=Math.min(360,Math.max(2,parseInt(document.getElementById('nd').textContent)+d));
   fetch('/api/divisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({n})})
@@ -248,6 +265,10 @@ function dlst(){
 function tgm(){
   sc=!sc;renderMode();
   fetch('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spreadCycle:sc})});
+}
+function tge(){
+  en=!en;renderEnable();
+  fetch('/api/enable',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enable:en})});
 }
 setInterval(upd,1500);upd();
 </script>
@@ -437,9 +458,20 @@ void runDiagStep(int step) {
       }
       case 3: {  // T04 — UART → TMC2209
         driver.begin();
-        diagTests[i].status = DS_ALERT;
-        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-          "UART TX configur\xc3\xa9 \xe2\x80\x94 pas de readback (v\xc3\xa9rifier c\xc3\xa2blage)");
+        uint8_t v = driver.version();
+        if (v == 0x21) {
+          diagTests[i].status = DS_OK;
+          snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+            "TMC2209 d\xc3\xa9tect\xc3\xa9 \xe2\x80\x94 version 0x%02X \xe2\x80\x94 UART OK", v);
+        } else if (v == 0x00 || v == 0xFF) {
+          diagTests[i].status = DS_FAIL;
+          snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+            "Pas de r\xc3\xa9ponse TMC2209 (0x%02X) \xe2\x80\x94 v\xc3\xa9rifier c\xc3\xa2blage PDN_UART", v);
+        } else {
+          diagTests[i].status = DS_ALERT;
+          snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+            "Version inattendue 0x%02X \xe2\x80\x94 v\xc3\xa9rifier adresse UART (MS1/MS2=GND)", v);
+        }
         break;
       }
       case 4: {  // T05 — Config courant + µstepping
@@ -479,9 +511,21 @@ void runDiagStep(int step) {
         break;
       }
       case 9: {  // T10 — Température driver
-        diagTests[i].status = DS_ALERT;
-        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-          "Lecture temp\xc3\xa9rature n\xc3\xa9cessite RX UART \xe2\x80\x94 non impl\xc3\xa9ment\xc3\xa9");
+        bool ot   = driver.ot();    // surchauffe >150°C → arrêt driver
+        bool otpw = driver.otpw();  // pré-alerte >120°C
+        if (ot) {
+          diagTests[i].status = DS_FAIL;
+          snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+            "SURCHAUFFE (>150\xc2\xb0C) \xe2\x80\x94 driver arr\xc3\xaat\xc3\xa9 en protection");
+        } else if (otpw) {
+          diagTests[i].status = DS_ALERT;
+          snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+            "Pr\xc3\xa9-alerte temp\xc3\xa9rature (>120\xc2\xb0C) \xe2\x80\x94 v\xc3\xa9rifier ventilation");
+        } else {
+          diagTests[i].status = DS_OK;
+          snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+            "Temp\xc3\xa9rature normale \xe2\x80\x94 DRV_STATUS=0x%08X", (unsigned)driver.DRV_STATUS());
+        }
         break;
       }
     }
@@ -496,11 +540,19 @@ void handleRoot() { server.send_P(200, "text/html", PAGE_MAIN); }
 void handleDiagPage() { server.send_P(200, "text/html", PAGE_DIAG); }
 
 void handleStatus() {
-  char json[320];
+  // Lire l'état thermique du TMC2209 via UART
+  // tempState : 0=OK, 1=pré-alerte, 2=surchauffe
+  int tempState = 0;
+  if (motorEnabled) {
+    if (driver.ot())        tempState = 2;
+    else if (driver.otpw()) tempState = 1;
+  }
+
+  char json[360];
   snprintf(json, sizeof(json),
     "{\"divisions\":%d,\"currentDiv\":%d,\"steps\":%ld,"
     "\"enabled\":%s,\"moving\":%s,\"rssi\":%d,\"uptime\":%lu,"
-    "\"temp\":0,\"spreadCycle\":%s}",
+    "\"temp\":%d,\"spreadCycle\":%s}",
     numDivisions,
     currentDivision(),
     stepper.currentPosition(),
@@ -508,6 +560,7 @@ void handleStatus() {
     stepper.isRunning() ? "true" : "false",
     WiFi.RSSI(),
     millis(),
+    tempState,
     spreadCycleMode ? "true" : "false");
   server.send(200, "application/json", json);
 }
@@ -654,8 +707,8 @@ void setup() {
   pinMode(PIN_EN, OUTPUT);
   setMotorEnabled(false);
 
-  // TMC2209 via UART (TX uniquement)
-  SerialTMC.begin(115200, SERIAL_8N1, -1, PIN_UART);
+  // TMC2209 via UART (half-duplex : même broche RX et TX — résistance 1kΩ sur PDN_UART)
+  SerialTMC.begin(115200, SERIAL_8N1, PIN_UART, PIN_UART);
   delay(100);
   driver.begin();
   driver.toff(5);

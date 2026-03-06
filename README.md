@@ -14,9 +14,10 @@
 ```bash
 arduino-cli lib install "TMCStepper"
 arduino-cli lib install "AccelStepper"
+arduino-cli lib install "WiFiManager"
 ```
 
-Ou via l'IDE : Outils → Gérer les bibliothèques → chercher `TMCStepper` et `AccelStepper`.
+Ou via l'IDE : Outils → Gérer les bibliothèques → chercher `TMCStepper`, `AccelStepper`, `WiFiManager`.
 
 ## Câblage TMC2209 → Arduino Nano ESP32
 
@@ -26,7 +27,7 @@ Arduino Nano ESP32        TMC2209
 D2  ──────────────────── STEP
 D3  ──────────────────── DIR
 D4  ──────────────────── EN
-D5  ──── [1 kΩ] ──────── PDN_UART
+D5  ──── [1 kΩ] ──────── PDN_UART  (même broche RX et TX — half-duplex)
 GND ──────────────────── MS1
 GND ──────────────────── MS2
 GND ──────────────────── GND
@@ -35,6 +36,9 @@ GND ──────────────────── GND
 ```
 
 > **MS1=GND, MS2=GND** → adresse UART 0, microstepping configuré via UART (16×).
+>
+> La broche D5 est utilisée en half-duplex (RX et TX sur le même GPIO, via la résistance 1 kΩ),
+> ce qui permet la lecture des registres TMC2209 (version, statut thermique, StallGuard).
 
 ## Paramètres mécaniques
 
@@ -49,23 +53,22 @@ GND ──────────────────── GND
 
 ## Configuration WiFi
 
-Modifier `diviseur.ino` :
+Au premier démarrage (ou si le réseau configuré est introuvable), l'ESP32 crée un point d'accès Wi-Fi :
 
-```cpp
-const char* WIFI_SSID     = "VotreSSID";
-const char* WIFI_PASSWORD = "VotreMotDePasse";
-```
+- **SSID** : `Diviseur-Setup`
+- Se connecter avec un smartphone ou PC, puis entrer les identifiants du réseau cible
+- L'adresse IP est affichée dans le moniteur série après connexion
 
-L'adresse IP est affichée dans le moniteur série après connexion.
+Les identifiants sont mémorisés dans la flash — aucune recompilation nécessaire.
 
 ## Interface web
 
 | URL | Description |
 |-----|-------------|
 | `http://<ip>/` | Page principale : divisions, navigation, position |
-| `http://<ip>/test` | Page de test : jog manuel, activation moteur, état |
+| `http://<ip>/diag` | Page diagnostic : tests par étape, état driver |
 
-### API REST
+## API REST
 
 | Méthode | Endpoint | Corps JSON | Description |
 |---------|----------|------------|-------------|
@@ -74,8 +77,11 @@ L'adresse IP est affichée dans le moniteur série après connexion.
 | POST | `/api/move` | `{"dir":1}` ou `{"dir":-1}` | Avancer / reculer d'une division |
 | POST | `/api/home` | — | Déclarer la position courante comme zéro |
 | POST | `/api/enable` | `{"enable":true}` | Activer / désactiver le moteur |
-| POST | `/api/stop` | — | Arrêt immédiat |
-| POST | `/api/jog` | `{"steps":100}` | Jog de N pas (page test) |
+| POST | `/api/stop` | — | Arrêt immédiat du moteur |
+| POST | `/api/jog` | `{"steps":100}` | Jog de N pas |
+| POST | `/api/mode` | `{"spreadCycle":true}` | Basculer StealthChop ↔ SpreadCycle |
+| GET | `/api/diag` | — | État JSON de tous les tests diagnostic |
+| POST | `/api/diag/run` | `{"step":1}` | Lancer les tests d'une étape (1–4) |
 
 ## Compilation et upload
 
@@ -88,10 +94,4 @@ arduino-cli compile --fqbn arduino:esp32:nano_nora diviseur.ino
 
 # Upload
 arduino-cli upload -p /dev/cu.usbmodem* --fqbn arduino:esp32:nano_nora diviseur.ino
-```
-
-## Vérifier la version du core ESP32
-
-```bash
-./check_version.sh
 ```
