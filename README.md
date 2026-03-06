@@ -6,8 +6,8 @@
 |-----------|---------|
 | **Board** | Arduino Nano ESP32 |
 | **FQBN** | `arduino:esp32:nano_nora` |
-| **Core Arduino ESP32** | `arduino:esp32` ≥ 3.x |
-| **arduino-cli** | 1.x recommandé |
+| **Core Arduino ESP32** | `arduino:esp32` 2.0.18-arduino.5 |
+| **arduino-cli** | 1.4.1 |
 
 ## Vérifier la version du core ESP32
 
@@ -37,5 +37,5 @@ arduino-cli compile --fqbn arduino:esp32:nano_nora diviseur.ino
 ## Upload
 
 ```bash
-arduino-cli upload -p /dev/ttyUSB0 --fqbn arduino:esp32:nano_nora diviseur.ino
+arduino-cli upload -p /dev/cu.usbmodem* --fqbn arduino:esp32:nano_nora diviseur.ino
 ```
