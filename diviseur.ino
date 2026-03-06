@@ -254,7 +254,7 @@ hr{border:none;border-top:1px solid #e8eef6;margin:16px 0}
   <div class="card">
     <div class="lbl">Syst&egrave;me</div>
     <div class="sys">
-      <div class="si"><div class="sv" id="s-heap">— kB</div><div class="sk">RAM libre</div></div>
+      <div class="si"><div class="sv" id="s-heap">— kB</div><div class="sk">RAM utilis&eacute;e</div></div>
       <div class="si"><div class="sv" id="s-flash">— kB</div><div class="sk">Flash utilis&eacute;</div></div>
     </div>
   </div>
@@ -306,9 +306,9 @@ function upd(){
     document.getElementById('dot').className='dot'+(moving?' moving':'');
     if(d.version)document.getElementById('ver').textContent='v'+d.version;
     if(d.heap&&d.heapTotal){
-      const hp=Math.round(d.heap/1024);
+      const used=Math.round((d.heapTotal-d.heap)/1024);
       const ht=Math.round(d.heapTotal/1024);
-      document.getElementById('s-heap').textContent=hp+'\u202fkB / '+ht+'\u202fkB ('+Math.round(d.heap/d.heapTotal*100)+'%)';
+      document.getElementById('s-heap').textContent=used+'\u202fkB / '+ht+'\u202fkB ('+Math.round((d.heapTotal-d.heap)/d.heapTotal*100)+'%)';
     }
     if(d.sketch&&d.flash){
       const sk=Math.round(d.sketch/1024);
