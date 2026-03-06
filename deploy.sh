@@ -14,7 +14,7 @@ REPO_URL="https://github.com/tdesve2024/diviseur"   # ← adapter si besoin
 BRANCH="claude/continue-divisor-project-cs9OG"
 
 SKETCH_NAME="diviseur"
-BUILD_DIR="${TMPDIR:-/tmp}/diviseur_deploy"
+BUILD_DIR="${TMPDIR:-/tmp}/diviseur"
 FQBN="arduino:esp32:nano_nora"      # Arduino Nano ESP32 (nora)
 
 CORE_PLATFORM="arduino:esp32"
