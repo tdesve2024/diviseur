@@ -3,6 +3,11 @@
 ## En attente
 
 - [ ] Tests diagnostics non-bloquants : l'interface se fige pendant l'exécution d'une étape si les lectures UART ont des timeouts. Envisager une exécution test-par-test via `/api/diag/run` individuel ou un mécanisme polling côté client.
+- [ ] Je souhaitais une interface claire, dans des couleurs pastel
+- [ ] Il faudrait indiquer les pourcentage d'utilisation de l'espace de l'arduino (flash et RAM), avec la température du processeur
+- [ ] Pour la saisie des divisions, un clavier numérique en popup serait plus pratique
+- [ ] Dans le titre, à côté du Cowells RGB61, on peut rappeler le rapport de division (40:1)
+- [ ] On pourrait également indiquer un numéro de version... Chaque commit pourrait incrémenter un indice de révision. Les changement de versions seront explicites
 
 ## Terminé
 
