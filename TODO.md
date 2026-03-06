@@ -2,6 +2,9 @@
 
 ## En attente
 
+- [ ] remplacer pas/div par ang/div dans le premier panneau
+- [ ] Insérer une barre de progression qui donne le nombre de step à faire pour l'exécution (en fonction du paramétrage). Si possible mettre en évidence vitesse et accélération/décélération
+- [ ] Bloquer les boutons avance et recule pendant l'exécution
 - [ ] Tests diagnostics non-bloquants : l'interface se fige pendant l'exécution d'une étape si les lectures UART ont des timeouts. Envisager une exécution test-par-test ou un mécanisme polling côté client.
 
 ## Terminé
