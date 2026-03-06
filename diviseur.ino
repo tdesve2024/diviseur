@@ -75,16 +75,16 @@ static const char* DIAG_IDS[NUM_DIAG_TESTS] = {
 };
 static const uint8_t DIAG_STEP_MAP[NUM_DIAG_TESTS] = {1,1,2,3,3,3,3,4,4,4};
 static const char* DIAG_NAMES[NUM_DIAG_TESTS] = {
-  "D\xc3\xa9marrage syst\xc3\xa8me",
+  "Démarrage système",
   "Connexion WiFi",
   "Alimentation 5V (Buck)",
-  "UART \xe2\x86\x92 TMC2209",
-  "Config courant + \xc2\xb5stepping",
+  "UART → TMC2209",
+  "Config courant + µstepping",
   "Alimentation moteur VM",
   "Broche EN (enable driver)",
   "Sens de rotation",
-  "Pr\xc3\xa9cision microstepping",
-  "Temp\xc3\xa9rature driver"
+  "Précision microstepping",
+  "Température driver"
 };
 static const char* STEP_TITLES[NUM_DIAG_STEPS] = {
   "Arduino seul + USB",
@@ -94,8 +94,8 @@ static const char* STEP_TITLES[NUM_DIAG_STEPS] = {
 };
 static const char* STEP_DESCS[NUM_DIAG_STEPS] = {
   "Alimenter via USB uniquement",
-  "Alim 12V \xe2\x86\x92 Buck \xe2\x86\x92 c\xc3\xa2ble USB-C \xe2\x86\x92 Nano ESP32",
-  "C\xc3\xa2bler le driver TMC2209 (STEP/DIR/EN/UART)",
+  "Alim 12V → Buck → câble USB-C → Nano ESP32",
+  "Câbler le driver TMC2209 (STEP/DIR/EN/UART)",
   "Brancher le moteur NEMA 14 au TMC2209"
 };
 
@@ -541,7 +541,7 @@ void runDiagStep(int step) {
         uint32_t heap = ESP.getFreeHeap();
         diagTests[i].status = (heap > 50000) ? DS_OK : DS_ALERT;
         snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-          "CPU OK \xe2\x80\x94 heap libre\u00a0: %u kB \xe2\x80\x94 %lu ms depuis boot",
+          "CPU OK — heap libre\u00a0: %u kB — %lu ms depuis boot",
           heap / 1024, millis());
         break;
       }
@@ -549,18 +549,18 @@ void runDiagStep(int step) {
         if (WiFi.status() == WL_CONNECTED) {
           diagTests[i].status = DS_OK;
           snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-            "Connect\xc3\xa9 \xc3\xa0 \"%s\" \xe2\x80\x94 IP %s RSSI=%d dBm",
+            "Connecté à \"%s\" — IP %s RSSI=%d dBm",
             WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), WiFi.RSSI());
         } else {
           diagTests[i].status = DS_FAIL;
-          snprintf(diagTests[i].detail, sizeof(diagTests[i].detail), "Non connect\xc3\xa9");
+          snprintf(diagTests[i].detail, sizeof(diagTests[i].detail), "Non connecté");
         }
         break;
       }
       case 2: {  // T03 — Buck 5V (vérification manuelle)
         diagTests[i].status = DS_ALERT;
         snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-          "V\xc3\xa9rification manuelle \xe2\x80\x94 mesurer 5V sur le rail Buck");
+          "Vérification manuelle — mesurer 5V sur le rail Buck");
         break;
       }
       case 3: {  // T04 — UART → TMC2209
@@ -569,15 +569,15 @@ void runDiagStep(int step) {
         if (v == 0x21) {
           diagTests[i].status = DS_OK;
           snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-            "TMC2209 d\xc3\xa9tect\xc3\xa9 \xe2\x80\x94 version 0x%02X \xe2\x80\x94 UART OK", v);
+            "TMC2209 détecté — version 0x%02X — UART OK", v);
         } else if (v == 0x00 || v == 0xFF) {
           diagTests[i].status = DS_FAIL;
           snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-            "Pas de r\xc3\xa9ponse TMC2209 (0x%02X) \xe2\x80\x94 v\xc3\xa9rifier c\xc3\xa2blage PDN_UART", v);
+            "Pas de réponse TMC2209 (0x%02X) — vérifier câblage PDN_UART", v);
         } else {
           diagTests[i].status = DS_ALERT;
           snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-            "Version inattendue 0x%02X \xe2\x80\x94 v\xc3\xa9rifier adresse UART (MS1/MS2=GND)", v);
+            "Version inattendue 0x%02X — vérifier adresse UART (MS1/MS2=GND)", v);
         }
         break;
       }
@@ -586,14 +586,14 @@ void runDiagStep(int step) {
         driver.microsteps(MICROSTEPS);
         diagTests[i].status = DS_OK;
         snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-          "Courant\u00a0: %d mA RMS \xe2\x80\x94 Microstepping\u00a0: %d\xc3\x97",
+          "Courant\u00a0: %d mA RMS — Microstepping\u00a0: %d×",
           MOTOR_CURRENT, MICROSTEPS);
         break;
       }
       case 5: {  // T06 — Alimentation moteur VM
         diagTests[i].status = DS_ALERT;
         snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-          "V\xc3\xa9rification manuelle \xe2\x80\x94 mesurer 12V sur VM driver");
+          "Vérification manuelle — mesurer 12V sur VM driver");
         break;
       }
       case 6: {  // T07 — Broche EN
@@ -601,20 +601,20 @@ void runDiagStep(int step) {
         delay(10);
         diagTests[i].status = DS_OK;
         snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-          "Broche EN activ\xc3\xa9e (actif LOW) \xe2\x80\x94 driver pr\xc3\xaat");
+          "Broche EN activée (actif LOW) — driver prêt");
         setMotorEnabled(false);
         break;
       }
       case 7: {  // T08 — Sens de rotation
         diagTests[i].status = DS_ALERT;
         snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-          "V\xc3\xa9rifier visuellement le sens apr\xc3\xa8s connexion moteur");
+          "Vérifier visuellement le sens après connexion moteur");
         break;
       }
       case 8: {  // T09 — Précision microstepping
         diagTests[i].status = DS_ALERT;
         snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-          "Test de pr\xc3\xa9cision requis apr\xc3\xa8s montage complet");
+          "Test de précision requis après montage complet");
         break;
       }
       case 9: {  // T10 — Température driver
@@ -623,15 +623,15 @@ void runDiagStep(int step) {
         if (ot) {
           diagTests[i].status = DS_FAIL;
           snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-            "SURCHAUFFE (>150\xc2\xb0C) \xe2\x80\x94 driver arr\xc3\xaat\xc3\xa9 en protection");
+            "SURCHAUFFE (>150°C) — driver arrêté en protection");
         } else if (otpw) {
           diagTests[i].status = DS_ALERT;
           snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-            "Pr\xc3\xa9-alerte temp\xc3\xa9rature (>120\xc2\xb0C) \xe2\x80\x94 v\xc3\xa9rifier ventilation");
+            "Pré-alerte température (>120°C) — vérifier ventilation");
         } else {
           diagTests[i].status = DS_OK;
           snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-            "Temp\xc3\xa9rature normale \xe2\x80\x94 DRV_STATUS=0x%08X", (unsigned)driver.DRV_STATUS());
+            "Température normale — DRV_STATUS=0x%08X", (unsigned)driver.DRV_STATUS());
         }
         break;
       }
@@ -829,7 +829,7 @@ void setup() {
   driver.microsteps(MICROSTEPS);
   driver.en_spreadCycle(false);   // StealthChop
   driver.pwm_autoscale(true);
-  Serial.println("TMC2209 configur\xc3\xa9");
+  Serial.println("TMC2209 configuré");
 
   // AccelStepper
   stepper.setMaxSpeed(SPEED_WORK);
@@ -837,13 +837,13 @@ void setup() {
 
   // WiFi via WiFiManager
   WiFiManager wm;
-  Serial.println("WiFiManager \xe2\x80\x94 connexion en cours...");
+  Serial.println("WiFiManager — connexion en cours...");
   if (wm.autoConnect("Diviseur-Setup")) {
-    Serial.printf("Connect\xc3\xa9\u00a0! IP\u00a0: http://%s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("Connecté\u00a0! IP\u00a0: http://%s\n", WiFi.localIP().toString().c_str());
     // Lancer automatiquement les tests de l'étape 1
     runDiagStep(1);
   } else {
-    Serial.println("\xc3\x89chec WiFi \xe2\x80\x94 red\xc3\xa9marrage dans 10 s...");
+    Serial.println("Échec WiFi — redémarrage dans 10 s...");
     delay(10000);
     ESP.restart();
   }
@@ -862,7 +862,7 @@ void setup() {
   server.on("/api/jog",       HTTP_POST, handleJog);
   server.on("/api/mode",      HTTP_POST, handleMode);
   server.begin();
-  Serial.println("Serveur web d\xc3\xa9marr\xc3\xa9");
+  Serial.println("Serveur web démarré");
 }
 
 void loop() {
