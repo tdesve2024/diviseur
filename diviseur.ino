@@ -107,106 +107,124 @@ const char PAGE_MAIN[] PROGMEM = R"rawliteral(
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Diviseur RGB61</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f2f5;color:#1a2d3d;max-width:480px;margin:auto;min-height:100vh}
-.hdr{background:#1a2d3d;padding:14px 18px;display:flex;align-items:center;justify-content:space-between}
-.hdr h1{color:#fff;font-size:1.25em;font-weight:800;letter-spacing:.05em}
-.hdr p{color:#6b8cae;font-size:.7em;margin-top:3px}
-.badge{background:#2d6a9f;color:#fff;font-size:.72em;font-weight:700;padding:4px 10px;border-radius:20px}
-.sbar{background:#2d6a9f;padding:10px 18px;display:flex;align-items:center;gap:8px}
-.dot{width:9px;height:9px;border-radius:50%;background:#a8e6cf}
-.sbar span{color:#fff;font-weight:700;font-size:.88em;letter-spacing:.06em}
-.tabs{background:#1a2d3d;display:flex}
-.tab{flex:1;padding:13px 8px;text-align:center;color:#6b8cae;font-size:.75em;font-weight:700;letter-spacing:.08em;text-decoration:none;border-bottom:3px solid transparent;display:flex;align-items:center;justify-content:center;gap:5px}
-.tab.on{color:#fff;border-bottom-color:#2d6a9f}
-.pg{padding:14px}
-.card{background:#fff;border-radius:14px;padding:18px;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,.07)}
-.lbl{font-size:.68em;color:#8a9ab0;letter-spacing:.1em;font-weight:700;margin-bottom:14px}
-.big{text-align:center;margin-bottom:14px;line-height:1}
-.bign{font-size:3.8em;font-weight:800;color:#1a2d3d}
-.bigd{font-size:2em;font-weight:400;color:#b0bec5}
-hr{border:none;border-top:1px solid #eaeef2;margin:14px 0}
+body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif;background:#0d1421;color:#e8edf2;max-width:430px;margin:auto;min-height:100vh;padding-bottom:env(safe-area-inset-bottom)}
+/* Header */
+.hdr{background:#111d2e;padding:14px 20px;padding-top:calc(14px + env(safe-area-inset-top));display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.06)}
+.hdr h1{color:#fff;font-size:1.2em;font-weight:800;letter-spacing:.06em}
+.hdr p{color:#4a6fa5;font-size:.68em;margin-top:3px;letter-spacing:.03em}
+.badge{background:#1d4a7a;color:#7eb8f7;font-size:.7em;font-weight:700;padding:4px 11px;border-radius:20px;letter-spacing:.04em}
+/* Status bar */
+.sbar{background:#111d2e;padding:9px 20px;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(255,255,255,.06)}
+.dot{width:10px;height:10px;border-radius:50%;background:#30d158;box-shadow:0 0 6px #30d15880;flex-shrink:0}
+@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 6px #30d15880}50%{opacity:.4;box-shadow:0 0 2px #30d15820}}
+.dot.moving{animation:pulse 1s ease-in-out infinite}
+.sbar span{color:#c8d8ec;font-weight:600;font-size:.82em;letter-spacing:.06em}
+/* Tabs */
+.tabs{background:#111d2e;display:flex;border-bottom:1px solid rgba(255,255,255,.06)}
+.tab{flex:1;padding:13px 8px;text-align:center;color:#4a6fa5;font-size:.72em;font-weight:700;letter-spacing:.08em;text-decoration:none;border-bottom:3px solid transparent;display:flex;align-items:center;justify-content:center;gap:5px;transition:color .15s}
+.tab.on{color:#7eb8f7;border-bottom-color:#2d6a9f}
+/* Content */
+.pg{padding:14px 14px 6px}
+.card{background:#162236;border-radius:18px;padding:20px;margin-bottom:12px;border:1px solid rgba(255,255,255,.07)}
+.lbl{font-size:.65em;color:#4a6fa5;letter-spacing:.12em;font-weight:700;margin-bottom:16px;text-transform:uppercase}
+/* Position display */
+.big{text-align:center;margin-bottom:16px;line-height:1}
+.bign{font-size:4.2em;font-weight:800;color:#fff;letter-spacing:-.02em}
+.bigd{font-size:2.1em;font-weight:300;color:#3a5a80}
+hr{border:none;border-top:1px solid rgba(255,255,255,.07);margin:16px 0}
 .met{display:flex;text-align:center}
 .met>div{flex:1}
-.mv{font-size:1.05em;font-weight:700;color:#2d6a9f}
-.mv.or{color:#e67e22}
-.ml{font-size:.62em;color:#8a9ab0;letter-spacing:.08em;margin-top:3px}
+.mv{font-size:1.05em;font-weight:700;color:#7eb8f7}
+.ml{font-size:.6em;color:#4a6fa5;letter-spacing:.08em;margin-top:4px;text-transform:uppercase}
+/* Navigation buttons — style télécommande */
 .nav{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
-.br{background:#1a2d3d;color:#fff;border:none;border-radius:12px;padding:18px;font-size:.95em;font-weight:800;cursor:pointer;letter-spacing:.06em;width:100%}
-.ba{background:#2d6a9f;color:#fff;border:none;border-radius:12px;padding:18px;font-size:.95em;font-weight:800;cursor:pointer;letter-spacing:.06em;width:100%}
-.bz{width:100%;background:#f0f2f5;color:#5a6a7a;border:none;border-radius:12px;padding:13px;font-size:.84em;font-weight:600;cursor:pointer;letter-spacing:.04em}
-.br:active,.ba:active,.bz:active{opacity:.7}
-.dc{display:flex;align-items:center;gap:8px}
-.pm{background:#f0f2f5;border:none;border-radius:10px;width:48px;height:48px;font-size:1.5em;font-weight:300;cursor:pointer;color:#1a2d3d;flex-shrink:0}
-.dv{flex:1;text-align:center}
-.dn{font-size:2.2em;font-weight:800;color:#1a2d3d;line-height:1}
-.dl{font-size:.62em;color:#8a9ab0;letter-spacing:.08em;margin-top:3px}
-.bl{background:#2d6a9f;border:none;border-radius:10px;width:48px;height:48px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.bl svg{width:18px;height:18px;fill:#fff}
-.mrow{display:flex;align-items:center;justify-content:space-between}
-.mn{font-size:1.05em;font-weight:700}
-.ms{font-size:.78em;color:#8a9ab0;margin-top:3px}
-.tg{width:46px;height:26px;background:#d0d5db;border-radius:13px;position:relative;cursor:pointer;transition:background .2s;flex-shrink:0}
-.tg.on{background:#2d6a9f}
-.tg::after{content:'';position:absolute;width:20px;height:20px;background:#fff;border-radius:50%;top:3px;left:3px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.25)}
-.tg.on::after{left:23px}
-.bst{width:100%;background:#c0392b;color:#fff;border:none;border-radius:12px;padding:14px;font-size:.95em;font-weight:800;cursor:pointer;letter-spacing:.06em}
+.br,.ba{border:none;border-radius:16px;padding:22px 12px;font-size:1em;font-weight:800;cursor:pointer;letter-spacing:.05em;width:100%;transition:transform .1s,opacity .1s;-webkit-tap-highlight-color:transparent}
+.br{background:#1e3a5f;color:#7eb8f7}
+.ba{background:#2d6a9f;color:#fff;box-shadow:0 4px 16px rgba(45,106,159,.4)}
+.br:active,.ba:active{transform:scale(.96);opacity:.85}
+.bz{width:100%;background:#1a2d3d;color:#8aaccc;border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:15px;font-size:.88em;font-weight:600;cursor:pointer;letter-spacing:.04em;margin-bottom:10px;transition:opacity .1s;-webkit-tap-highlight-color:transparent}
+.bz:active{opacity:.7}
+.bst{width:100%;background:#7c1d1d;color:#ff6b6b;border:1px solid rgba(255,100,100,.3);border-radius:14px;padding:15px;font-size:.95em;font-weight:800;cursor:pointer;letter-spacing:.06em;box-shadow:0 4px 14px rgba(192,57,43,.25);transition:opacity .1s;-webkit-tap-highlight-color:transparent}
 .bst:active{opacity:.7}
+/* Division picker */
+.dc{display:flex;align-items:center;gap:10px}
+.pm{background:#1e3a5f;border:none;border-radius:12px;width:52px;height:52px;font-size:1.6em;font-weight:300;cursor:pointer;color:#7eb8f7;flex-shrink:0;transition:opacity .1s;-webkit-tap-highlight-color:transparent}
+.pm:active{opacity:.6}
+.dv{flex:1;text-align:center}
+.dn{font-size:2.5em;font-weight:800;color:#fff;line-height:1}
+.dl{font-size:.6em;color:#4a6fa5;letter-spacing:.1em;margin-top:4px;text-transform:uppercase}
+.bl{background:#2d6a9f;border:none;border-radius:12px;width:52px;height:52px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;-webkit-tap-highlight-color:transparent}
+.bl:active{opacity:.7}
+.bl svg{width:20px;height:20px;fill:#fff}
+/* Toggles */
+.mrow{display:flex;align-items:center;justify-content:space-between}
+.mn{font-size:1em;font-weight:600;color:#c8d8ec}
+.ms{font-size:.75em;color:#4a6fa5;margin-top:4px}
+.tg{width:50px;height:28px;background:#1e3a5f;border-radius:14px;position:relative;cursor:pointer;transition:background .2s;flex-shrink:0;-webkit-tap-highlight-color:transparent}
+.tg.on{background:#2d6a9f}
+.tg::after{content:'';position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;top:3px;left:3px;transition:left .2s;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.tg.on::after{left:25px}
+.sep{border:none;border-top:1px solid rgba(255,255,255,.07);margin:14px 0}
 </style>
 </head>
 <body>
 <div class="hdr">
-  <div><h1>DIVISEUR</h1><p>Cowells RGB61 &middot; TMC2209 &middot; NEMA 14</p></div>
+  <div><h1>DIVISEUR</h1><p>Cowells RGB61 &middot; TMC2209 &middot; NEMA&nbsp;14</p></div>
   <div class="badge">WiFi</div>
 </div>
-<div class="sbar"><div class="dot"></div><span id="sbarTxt">PR&#202;T</span></div>
+<div class="sbar"><div class="dot" id="dot"></div><span id="sbarTxt">PR&#202;T</span></div>
 <div class="tabs">
   <a class="tab on" href="/">&#9658; CONTR&#212;LEUR</a>
   <a class="tab" href="/diag">&#9658; DIAGNOSTIC</a>
 </div>
 <div class="pg">
   <div class="card">
-    <div class="lbl">DIVISION COURANTE</div>
+    <div class="lbl">Division courante</div>
     <div class="big">
-      <span class="bign" id="dc">0</span><span class="bigd"> /&thinsp;<span id="dt">6</span></span>
+      <span class="bign" id="dc">0</span><span class="bigd">&thinsp;/&thinsp;<span id="dt">6</span></span>
     </div>
     <hr>
     <div class="met">
-      <div><div class="mv" id="an">0.0&deg;</div><div class="ml">ANGLE ACTUEL</div></div>
-      <div><div class="mv" id="pa">60.0&deg;</div><div class="ml">PAS / DIVISION</div></div>
-      <div><div class="mv or" id="tp">OK</div><div class="ml">TEMP. DRIVER</div></div>
+      <div><div class="mv" id="an">0.0&deg;</div><div class="ml">Angle</div></div>
+      <div><div class="mv" id="pa">60.0&deg;</div><div class="ml">Pas / div.</div></div>
+      <div><div class="mv" id="tp">OK</div><div class="ml">Temp. driver</div></div>
     </div>
   </div>
+
   <div class="card">
     <div class="nav">
       <button class="br" onclick="mv(-1)">&#9664; RECUL</button>
-      <button class="ba" onclick="mv(1)">&#9654; AVANCE</button>
+      <button class="ba" onclick="mv(1)">AVANCE &#9654;</button>
     </div>
-    <button class="bz" onclick="home()" style="margin-bottom:8px">&#8635; REMETTRE &Agrave; Z&Eacute;RO</button>
-    <button class="bst" id="bstop" onclick="stopMotor()">&#9632; STOP</button>
+    <button class="bz" onclick="home()">&#8635;&nbsp; REMETTRE &Agrave; Z&Eacute;RO</button>
+    <button class="bst" onclick="stopMotor()">&#9632;&nbsp; STOP D&rsquo;URGENCE</button>
   </div>
+
   <div class="card">
-    <div class="lbl">NOMBRE DE DIVISIONS</div>
+    <div class="lbl">Nombre de divisions</div>
     <div class="dc">
       <button class="pm" onclick="chg(-1)">&#8722;</button>
-      <div class="dv"><div class="dn" id="nd">6</div><div class="dl">DIVISIONS</div></div>
+      <div class="dv"><div class="dn" id="nd">6</div><div class="dl">Divisions</div></div>
       <button class="pm" onclick="chg(1)">+</button>
       <button class="bl" onclick="dlst()">
         <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="2" rx="1"/><rect x="3" y="11" width="18" height="2" rx="1"/><rect x="3" y="17" width="18" height="2" rx="1"/></svg>
       </button>
     </div>
   </div>
+
   <div class="card">
-    <div class="lbl">MODE DRIVER</div>
-    <div class="mrow" style="margin-bottom:14px">
+    <div class="lbl">R&eacute;glages driver</div>
+    <div class="mrow">
       <div><div class="mn" id="mdn">StealthChop</div><div class="ms" id="mds">Silencieux</div></div>
       <div class="tg" id="mdtg" onclick="tgm()"></div>
     </div>
+    <hr class="sep">
     <div class="mrow">
-      <div><div class="mn" id="men">Moteur</div><div class="ms" id="mes">D\u00e9sactiv\u00e9</div></div>
+      <div><div class="mn">Moteur</div><div class="ms" id="mes">D&eacute;sactiv&eacute;</div></div>
       <div class="tg" id="metg" onclick="tge()"></div>
     </div>
   </div>
@@ -214,6 +232,7 @@ hr{border:none;border-top:1px solid #eaeef2;margin:14px 0}
 <script>
 let sc=false,en=false;
 const TEMP_LABELS=['OK','CHAUD','STOP'];
+const TEMP_COLORS=['#30d158','#ff9f0a','#ff453a'];
 function upd(){
   fetch('/api/status').then(r=>r.json()).then(d=>{
     document.getElementById('dc').textContent=d.currentDiv;
@@ -223,11 +242,13 @@ function upd(){
     const p=d.divisions>0?(360/d.divisions).toFixed(1):'0.0';
     document.getElementById('an').textContent=a+'\u00b0';
     document.getElementById('pa').textContent=p+'\u00b0';
-    const t=d.temp||0;
+    const t=Math.min(2,d.temp||0);
     const te=document.getElementById('tp');
-    te.textContent=TEMP_LABELS[t]||'?';
-    te.style.color=t===2?'#c0392b':t===1?'#e67e22':'';
-    document.getElementById('sbarTxt').textContent=d.moving?'EN MOUVEMENT':'PR\u00caT';
+    te.textContent=TEMP_LABELS[t];
+    te.style.color=TEMP_COLORS[t];
+    const mv=d.moving;
+    document.getElementById('sbarTxt').textContent=mv?'EN MOUVEMENT':'PR\u00caT';
+    document.getElementById('dot').className='dot'+(mv?' moving':'');
     if(d.spreadCycle!==undefined&&d.spreadCycle!==sc){sc=d.spreadCycle;renderMode();}
     if(d.enabled!==undefined&&d.enabled!==en){en=d.enabled;renderEnable();}
   }).catch(()=>{});
@@ -255,7 +276,7 @@ function chg(d){
 function dlst(){
   const pr=[2,3,4,5,6,7,8,9,10,12,15,18,20,24,30,36,40,45,60,72,90,120,180,360];
   const c=parseInt(document.getElementById('nd').textContent);
-  const v=prompt('Valeurs courantes\u00a0: '+pr.join(', ')+'\n\nNombre de divisions\u00a0:',c);
+  const v=prompt('Pr\u00e9r\u00e9gl\u00e9s\u00a0: '+pr.join(', ')+'\n\nNombre de divisions\u00a0:',c);
   if(!v)return;
   const n=parseInt(v);
   if(n>=2&&n<=360)
@@ -284,57 +305,61 @@ const char PAGE_DIAG[] PROGMEM = R"rawliteral(
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Diagnostic — Diviseur RGB61</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Diagnostic &mdash; Diviseur RGB61</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f2f5;color:#1a2d3d;max-width:480px;margin:auto;min-height:100vh}
-.hdr{background:#1a2d3d;padding:14px 18px;display:flex;align-items:center;justify-content:space-between}
-.hdr h1{color:#fff;font-size:1.25em;font-weight:800;letter-spacing:.05em}
-.hdr p{color:#6b8cae;font-size:.7em;margin-top:3px}
-.badge{background:#2d6a9f;color:#fff;font-size:.72em;font-weight:700;padding:4px 10px;border-radius:20px}
-.sbar{background:#2d6a9f;padding:10px 18px;display:flex;align-items:center;gap:8px}
-.dot{width:9px;height:9px;border-radius:50%;background:#a8e6cf}
-.sbar span{color:#fff;font-weight:700;font-size:.88em;letter-spacing:.06em}
-.tabs{background:#1a2d3d;display:flex}
-.tab{flex:1;padding:13px 8px;text-align:center;color:#6b8cae;font-size:.75em;font-weight:700;letter-spacing:.08em;text-decoration:none;border-bottom:3px solid transparent;display:flex;align-items:center;justify-content:center;gap:5px}
-.tab.on{color:#fff;border-bottom-color:#2d6a9f}
-.pg{padding:14px}
+body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif;background:#0d1421;color:#e8edf2;max-width:430px;margin:auto;min-height:100vh;padding-bottom:env(safe-area-inset-bottom)}
+.hdr{background:#111d2e;padding:14px 20px;padding-top:calc(14px + env(safe-area-inset-top));display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.06)}
+.hdr h1{color:#fff;font-size:1.2em;font-weight:800;letter-spacing:.06em}
+.hdr p{color:#4a6fa5;font-size:.68em;margin-top:3px}
+.badge{background:#1d4a7a;color:#7eb8f7;font-size:.7em;font-weight:700;padding:4px 11px;border-radius:20px}
+.sbar{background:#111d2e;padding:9px 20px;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(255,255,255,.06)}
+.dot{width:10px;height:10px;border-radius:50%;background:#30d158;box-shadow:0 0 6px #30d15880;flex-shrink:0}
+.sbar span{color:#c8d8ec;font-weight:600;font-size:.82em;letter-spacing:.06em}
+.tabs{background:#111d2e;display:flex;border-bottom:1px solid rgba(255,255,255,.06)}
+.tab{flex:1;padding:13px 8px;text-align:center;color:#4a6fa5;font-size:.72em;font-weight:700;letter-spacing:.08em;text-decoration:none;border-bottom:3px solid transparent;display:flex;align-items:center;justify-content:center;gap:5px}
+.tab.on{color:#7eb8f7;border-bottom-color:#2d6a9f}
+.pg{padding:14px 14px 6px}
+/* Summary badges */
 .sum{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
-.sb{background:#fff;border-radius:12px;padding:14px 6px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.06)}
-.sn{font-size:1.9em;font-weight:800;line-height:1}
-.sl{font-size:.6em;font-weight:700;letter-spacing:.08em;margin-top:4px}
-.s-ok .sn,.s-ok .sl{color:#27ae60}
-.s-fl .sn,.s-fl .sl{color:#e74c3c}
-.s-al .sn,.s-al .sl{color:#e67e22}
-.s-pe .sn,.s-pe .sl{color:#95a5a6}
-.card{background:#fff;border-radius:14px;padding:16px;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,.07)}
+.sb{background:#162236;border-radius:14px;padding:14px 6px;text-align:center;border:1px solid rgba(255,255,255,.07)}
+.sn{font-size:2em;font-weight:800;line-height:1}
+.sl{font-size:.58em;font-weight:700;letter-spacing:.1em;margin-top:5px;text-transform:uppercase}
+.s-ok .sn,.s-ok .sl{color:#30d158}
+.s-fl .sn,.s-fl .sl{color:#ff453a}
+.s-al .sn,.s-al .sl{color:#ff9f0a}
+.s-pe .sn,.s-pe .sl{color:#4a6fa5}
+/* Step cards */
+.card{background:#162236;border-radius:18px;padding:16px;margin-bottom:12px;border:1px solid rgba(255,255,255,.07)}
 .shdr{display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}
-.sbdg{background:#1a2d3d;color:#fff;font-size:.65em;font-weight:800;padding:5px 9px;border-radius:6px;letter-spacing:.05em;white-space:nowrap;margin-top:2px}
+.sbdg{background:#1e3a5f;color:#7eb8f7;font-size:.65em;font-weight:800;padding:5px 10px;border-radius:8px;letter-spacing:.05em;white-space:nowrap;margin-top:2px}
 .si{flex:1;min-width:0}
-.st{font-weight:700;font-size:.9em;color:#1a2d3d}
-.sd{font-size:.72em;color:#8a9ab0;margin-top:2px;line-height:1.3}
-.btest{background:#2d6a9f;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-size:.75em;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.st{font-weight:700;font-size:.88em;color:#c8d8ec}
+.sd{font-size:.72em;color:#4a6fa5;margin-top:3px;line-height:1.4}
+.btest{background:#2d6a9f;color:#fff;border:none;border-radius:10px;padding:9px 14px;font-size:.75em;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;-webkit-tap-highlight-color:transparent}
 .btest:active{opacity:.7}
-.ti{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border-radius:10px;margin-bottom:7px;border-left:4px solid #e8ecf0;background:#fafbfc}
-.ti-ok{border-left-color:#27ae60;background:#f0fdf4}
-.ti-fl{border-left-color:#e74c3c;background:#fff5f5}
-.ti-al{border-left-color:#e67e22;background:#fff8f0}
-.tid{font-size:.68em;color:#8a9ab0;font-weight:600;min-width:26px;padding-top:2px;flex-shrink:0}
-.tbdg{font-size:.65em;font-weight:700;padding:2px 6px;border-radius:5px;letter-spacing:.05em;white-space:nowrap;flex-shrink:0}
-.bdg-ok{background:#d4edda;color:#27ae60}
-.bdg-fl{background:#f8d7da;color:#e74c3c}
-.bdg-al{background:#fde8d4;color:#e67e22}
-.bdg-pe{background:#eff0f1;color:#95a5a6}
+.btest.running{background:#1e3a5f;color:#4a6fa5}
+/* Test items */
+.ti{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border-radius:10px;margin-bottom:6px;border-left:3px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03)}
+.ti-ok{border-left-color:#30d158;background:rgba(48,209,88,.06)}
+.ti-fl{border-left-color:#ff453a;background:rgba(255,69,58,.06)}
+.ti-al{border-left-color:#ff9f0a;background:rgba(255,159,10,.06)}
+.tid{font-size:.65em;color:#4a6fa5;font-weight:600;min-width:28px;padding-top:2px;flex-shrink:0}
+.tbdg{font-size:.62em;font-weight:700;padding:3px 7px;border-radius:6px;letter-spacing:.05em;white-space:nowrap;flex-shrink:0}
+.bdg-ok{background:rgba(48,209,88,.2);color:#30d158}
+.bdg-fl{background:rgba(255,69,58,.2);color:#ff453a}
+.bdg-al{background:rgba(255,159,10,.2);color:#ff9f0a}
+.bdg-pe{background:rgba(74,111,165,.2);color:#4a6fa5}
 .tb{flex:1;min-width:0}
-.tn{font-weight:600;font-size:.85em;color:#1a2d3d}
-.td{font-size:.72em;color:#8a9ab0;margin-top:3px;line-height:1.4}
-.tdr{font-size:.68em;color:#b0bec5;flex-shrink:0;padding-top:2px;white-space:nowrap}
+.tn{font-weight:600;font-size:.83em;color:#c8d8ec}
+.td{font-size:.7em;color:#4a6fa5;margin-top:4px;line-height:1.4}
+.tdr{font-size:.65em;color:#2d4a6a;flex-shrink:0;padding-top:2px;white-space:nowrap}
 </style>
 </head>
 <body>
 <div class="hdr">
-  <div><h1>DIVISEUR</h1><p>Cowells RGB61 &middot; TMC2209 &middot; NEMA 14</p></div>
+  <div><h1>DIVISEUR</h1><p>Cowells RGB61 &middot; TMC2209 &middot; NEMA&nbsp;14</p></div>
   <div class="badge">WiFi</div>
 </div>
 <div class="sbar"><div class="dot"></div><span>PR&#202;T</span></div>
@@ -345,9 +370,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f2f5;
 <div class="pg">
   <div class="sum">
     <div class="sb s-ok"><div class="sn" id="cok">0</div><div class="sl">OK</div></div>
-    <div class="sb s-fl"><div class="sn" id="cfl">0</div><div class="sl">FAIL</div></div>
-    <div class="sb s-al"><div class="sn" id="cal">0</div><div class="sl">ALERTE</div></div>
-    <div class="sb s-pe"><div class="sn" id="cpe">0</div><div class="sl">EN ATT.</div></div>
+    <div class="sb s-fl"><div class="sn" id="cfl">0</div><div class="sl">Fail</div></div>
+    <div class="sb s-al"><div class="sn" id="cal">0</div><div class="sl">Alerte</div></div>
+    <div class="sb s-pe"><div class="sn" id="cpe">0</div><div class="sl">Attente</div></div>
   </div>
   <div id="steps"></div>
 </div>
@@ -367,7 +392,7 @@ function load(){
       let h=`<div class="shdr">
         <div class="sbdg">\u00c9TAPE ${s.n}</div>
         <div class="si"><div class="st">${esc(s.title)}</div><div class="sd">${esc(s.desc)}</div></div>
-        <button class="btest" onclick="run(${s.n})">&#9654; Tester</button>
+        <button class="btest" id="btn${s.n}" onclick="run(${s.n},this)">&#9654; Tester</button>
       </div>`;
       d.tests.filter(t=>t.step===s.n).forEach(t=>{
         const cls=t.status===1?'ti-ok':t.status===2?'ti-fl':t.status===3?'ti-al':'';
@@ -387,9 +412,11 @@ function load(){
     });
   }).catch(()=>{});
 }
-function run(n){
+function run(n,btn){
+  if(btn){btn.textContent='\u23f3 Test\u2026';btn.className='btest running';btn.disabled=true;}
   fetch('/api/diag/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({step:n})})
-    .then(()=>setTimeout(load,400));
+    .then(()=>{setTimeout(load,200);})
+    .catch(()=>load());
 }
 setInterval(load,5000);load();
 </script>
