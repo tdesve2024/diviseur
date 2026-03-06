@@ -1,0 +1,30 @@
+#!/bin/bash
+# Auto-incrémente FW_VERSION (1.X) dans diviseur.ino à chaque commit
+
+FILE="diviseur.ino"
+
+if [ ! -f "$FILE" ]; then
+  echo "[pre-commit] $FILE non trouvé, skip auto-version"
+  exit 0
+fi
+
+# Lire la version actuelle
+CURRENT=$(grep -oP '#define FW_VERSION\s+"\K[0-9]+\.[0-9]+' "$FILE")
+
+if [ -z "$CURRENT" ]; then
+  echo "[pre-commit] FW_VERSION introuvable dans $FILE, skip"
+  exit 0
+fi
+
+MAJOR="${CURRENT%%.*}"
+MINOR="${CURRENT##*.}"
+NEW_MINOR=$((MINOR + 1))
+NEW_VERSION="${MAJOR}.${NEW_MINOR}"
+
+# Remplacer dans le fichier
+sed -i "s/#define FW_VERSION\s*\"${CURRENT}\"/#define FW_VERSION      \"${NEW_VERSION}\"/" "$FILE"
+
+# Stager la modification
+git add "$FILE"
+
+echo "[pre-commit] Version bumped: ${CURRENT} → ${NEW_VERSION}"
