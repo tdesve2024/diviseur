@@ -25,8 +25,8 @@
 // ===================================================================
 //  CONFIGURATION — à adapter
 // ===================================================================
-const char* WIFI_SSID     = "VotreSSID";
-const char* WIFI_PASSWORD = "VotreMotDePasse";
+const char* WIFI_SSID     = "PortBlanc";
+const char* WIFI_PASSWORD = "t873Amu-:am";
 
 #define PIN_STEP      D2
 #define PIN_DIR       D3
