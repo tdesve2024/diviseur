@@ -40,7 +40,7 @@
 #define ACCEL_WORK      4000.0f
 #define SPEED_JOG       1600.0f
 
-#define FW_VERSION      "1.4"
+#define FW_VERSION      "1.6"
 
 const long STEPS_PER_TURN =
     (long)STEPS_PER_REV * MICROSTEPS * GEAR_RATIO;  // 128 000
@@ -55,6 +55,7 @@ long divOffset       = 0;
 bool motorEnabled    = false;
 bool jogMode         = false;
 bool spreadCycleMode = false;
+long moveStartPos    = 0;   // position au départ du mouvement courant
 
 // ===================================================================
 //  Diagnostic
@@ -100,6 +101,11 @@ static const char* STEP_DESCS[NUM_DIAG_STEPS] = {
 };
 
 DiagTest diagTests[NUM_DIAG_TESTS];
+
+// Exécution non-bloquante : une étape est décomposée test-par-test dans loop()
+static int  diagQueuedStep = 0;   // étape en attente (1-4), 0 = inactif
+static int  diagCurTestIdx = 0;   // prochain index de test à exécuter
+static bool diagRunning    = false;
 
 // ===================================================================
 //  Page CONTRÔLEUR (PROGMEM)
@@ -176,6 +182,12 @@ hr{border:none;border-top:1px solid #e8eef6;margin:16px 0}
 .si{background:#f5f8ff;border-radius:12px;padding:10px 14px;border:1px solid #dde6f5}
 .sv{font-size:.9em;font-weight:700;color:#1a2d4a}
 .sk{font-size:.6em;color:#7a90a8;letter-spacing:.06em;margin-top:2px;text-transform:uppercase}
+/* Progress bar */
+.pgwrap{margin-top:12px}
+.pgtrack{height:10px;background:#e8eef6;border-radius:5px;overflow:hidden;position:relative}
+.pgfill{height:100%;border-radius:5px;width:0%;transition:width .25s linear,background-color .3s}
+.pginfo{display:flex;justify-content:space-between;margin-top:6px;font-size:.64em;color:#7a90a8}
+.pgphase{font-weight:700;letter-spacing:.05em}
 /* Keypad modal */
 .kbd{display:none;position:fixed;inset:0;background:rgba(10,20,50,.4);z-index:100;align-items:flex-end;justify-content:center}
 .kbd.show{display:flex}
@@ -212,15 +224,23 @@ hr{border:none;border-top:1px solid #e8eef6;margin:16px 0}
     <hr>
     <div class="met">
       <div><div class="mv" id="an">0.0&deg;</div><div class="ml">Angle</div></div>
-      <div><div class="mv" id="pa">60.0&deg;</div><div class="ml">Pas / div.</div></div>
+      <div><div class="mv" id="pa">60.0&deg;</div><div class="ml">Ang / div.</div></div>
       <div><div class="mv" id="tp">OK</div><div class="ml">Temp. driver</div></div>
     </div>
   </div>
 
   <div class="card">
     <div class="nav">
-      <button class="br" onclick="mv(-1)">&#9664; RECUL</button>
-      <button class="ba" onclick="mv(1)">AVANCE &#9654;</button>
+      <button class="br" id="btnRecul" onclick="mv(-1)">&#9664; RECUL</button>
+      <button class="ba" id="btnAvance" onclick="mv(1)">AVANCE &#9654;</button>
+    </div>
+    <div class="pgwrap" id="pgwrap" style="display:none">
+      <div class="pgtrack"><div class="pgfill" id="pgfill"></div></div>
+      <div class="pginfo">
+        <span class="pgphase" id="pgphase">—</span>
+        <span id="pgspeed">0 pas/s</span>
+        <span id="pgpct">0%</span>
+      </div>
     </div>
     <button class="bz" onclick="home()">&#8635;&nbsp; REMETTRE &Agrave; Z&Eacute;RO</button>
     <button class="bst" onclick="stopMotor()">&#9632;&nbsp; STOP D&rsquo;URGENCE</button>
@@ -304,6 +324,33 @@ function upd(){
     const moving=d.moving;
     document.getElementById('sbarTxt').textContent=moving?'EN MOUVEMENT':'PR\u00caT';
     document.getElementById('dot').className='dot'+(moving?' moving':'');
+    // Bloquer RECUL/AVANCE pendant le mouvement
+    ['btnRecul','btnAvance'].forEach(id=>{
+      const b=document.getElementById(id);
+      if(b){b.disabled=moving;b.style.opacity=moving?'.35':'1';}
+    });
+    // Barre de progression
+    const pgwrap=document.getElementById('pgwrap');
+    if(moving&&d.moveTotal>0){
+      const done=d.moveTotal-d.distanceToGo;
+      const pct=Math.max(0,Math.min(100,Math.round(done/d.moveTotal*100)));
+      const spd=d.speed||0;
+      const spPct=d.maxSpeed>0?spd/d.maxSpeed:0;
+      // Phase : accel si vitesse < 40% max, decel si proche de la fin et vitesse < 40%
+      let phase,color;
+      if(pct<50&&spPct<0.75){phase='Accel.';color='hsl(220,65%,72%)';}
+      else if(pct>=50&&spPct<0.75){phase='D\u00e9cel.';color='hsl(30,80%,58%)';}
+      else{phase='Vitesse max';color='hsl(220,65%,50%)';}
+      pgwrap.style.display='';
+      document.getElementById('pgfill').style.width=pct+'%';
+      document.getElementById('pgfill').style.background=color;
+      document.getElementById('pgpct').textContent=pct+'%';
+      document.getElementById('pgspeed').textContent=spd+'\u202fpas/s';
+      document.getElementById('pgphase').textContent=phase;
+      document.getElementById('pgphase').style.color=color;
+    }else{
+      pgwrap.style.display='none';
+    }
     if(d.version)document.getElementById('ver').textContent='v'+d.version;
     if(d.heap&&d.heapTotal){
       const used=Math.round((d.heapTotal-d.heap)/1024);
@@ -458,21 +505,31 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif;ba
 </div>
 <script>
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+let pollTimer=null;
+function schedPoll(fast){
+  if(pollTimer)clearInterval(pollTimer);
+  pollTimer=setInterval(load,fast?400:5000);
+}
 function load(){
   fetch('/api/diag').then(r=>r.json()).then(d=>{
     document.getElementById('cok').textContent=d.counts.ok;
     document.getElementById('cfl').textContent=d.counts.fail;
     document.getElementById('cal').textContent=d.counts.alert;
     document.getElementById('cpe').textContent=d.counts.pending;
+    // Adapter la vitesse de polling selon l'état running
+    schedPoll(!!d.running);
     const sc=document.getElementById('steps');
     sc.innerHTML='';
     d.steps.forEach(s=>{
       const c=document.createElement('div');
       c.className='card';
+      // Désactiver le bouton si un test est en cours pour cette étape
+      const stepRunning=d.running&&(d.tests||[]).some(t=>t.step===s.n&&t.status===0);
       let h=`<div class="shdr">
         <div class="sbdg">\u00c9TAPE ${s.n}</div>
         <div class="si"><div class="st">${esc(s.title)}</div><div class="sd">${esc(s.desc)}</div></div>
-        <button class="btest" id="btn${s.n}" onclick="run(${s.n},this)">&#9654; Tester</button>
+        <button class="btest${stepRunning?' running':''}" id="btn${s.n}" onclick="run(${s.n},this)"${stepRunning?' disabled':''}>
+          ${stepRunning?'\u23f3 Test\u2026':'\u25b6 Tester'}</button>
       </div>`;
       d.tests.filter(t=>t.step===s.n).forEach(t=>{
         const cls=t.status===1?'ti-ok':t.status===2?'ti-fl':t.status===3?'ti-al':'';
@@ -495,10 +552,10 @@ function load(){
 function run(n,btn){
   if(btn){btn.textContent='\u23f3 Test\u2026';btn.className='btest running';btn.disabled=true;}
   fetch('/api/diag/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({step:n})})
-    .then(()=>{setTimeout(load,200);})
+    .then(()=>{schedPoll(true);load();})
     .catch(()=>load());
 }
-setInterval(load,5000);load();
+schedPoll(false);load();
 </script>
 </body>
 </html>
@@ -523,121 +580,139 @@ void doMoveDivision(int dir) {
     stepper.setAcceleration(ACCEL_WORK);
     jogMode = false;
   }
+  moveStartPos = stepper.currentPosition();
   divOffset += dir;
   stepper.moveTo(divOffset * (STEPS_PER_TURN / numDivisions));
 }
 
 // ===================================================================
-//  Diagnostic — exécution des tests
+//  Diagnostic — exécution d'un test unique
 // ===================================================================
+void execDiagTest(int i) {
+  unsigned long t0 = millis();
+  diagTests[i].detail[0] = 0;
+
+  switch (i) {
+    case 0: {  // T01 — Démarrage système
+      uint32_t heap = ESP.getFreeHeap();
+      diagTests[i].status = (heap > 50000) ? DS_OK : DS_ALERT;
+      snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+        "CPU OK — heap libre\u00a0: %u kB — %lu ms depuis boot",
+        heap / 1024, millis());
+      break;
+    }
+    case 1: {  // T02 — Connexion WiFi
+      if (WiFi.status() == WL_CONNECTED) {
+        diagTests[i].status = DS_OK;
+        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+          "Connecté à \"%s\" — IP %s RSSI=%d dBm",
+          WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), WiFi.RSSI());
+      } else {
+        diagTests[i].status = DS_FAIL;
+        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail), "Non connecté");
+      }
+      break;
+    }
+    case 2: {  // T03 — Buck 5V (vérification manuelle)
+      diagTests[i].status = DS_ALERT;
+      snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+        "Vérification manuelle — mesurer 5V sur le rail Buck");
+      break;
+    }
+    case 3: {  // T04 — UART → TMC2209
+      driver.begin();
+      uint8_t v = driver.version();
+      if (v == 0x21) {
+        diagTests[i].status = DS_OK;
+        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+          "TMC2209 détecté — version 0x%02X — UART OK", v);
+      } else if (v == 0x00 || v == 0xFF) {
+        diagTests[i].status = DS_FAIL;
+        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+          "Pas de réponse TMC2209 (0x%02X) — vérifier câblage PDN_UART", v);
+      } else {
+        diagTests[i].status = DS_ALERT;
+        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+          "Version inattendue 0x%02X — vérifier adresse UART (MS1/MS2=GND)", v);
+      }
+      break;
+    }
+    case 4: {  // T05 — Config courant + µstepping
+      driver.rms_current(MOTOR_CURRENT);
+      driver.microsteps(MICROSTEPS);
+      diagTests[i].status = DS_OK;
+      snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+        "Courant\u00a0: %d mA RMS — Microstepping\u00a0: %d×",
+        MOTOR_CURRENT, MICROSTEPS);
+      break;
+    }
+    case 5: {  // T06 — Alimentation moteur VM
+      diagTests[i].status = DS_ALERT;
+      snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+        "Vérification manuelle — mesurer 12V sur VM driver");
+      break;
+    }
+    case 6: {  // T07 — Broche EN
+      digitalWrite(PIN_EN, LOW);
+      delay(10);
+      diagTests[i].status = DS_OK;
+      snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+        "Broche EN activée (actif LOW) — driver prêt");
+      setMotorEnabled(false);
+      break;
+    }
+    case 7: {  // T08 — Sens de rotation
+      diagTests[i].status = DS_ALERT;
+      snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+        "Vérifier visuellement le sens après connexion moteur");
+      break;
+    }
+    case 8: {  // T09 — Précision microstepping
+      diagTests[i].status = DS_ALERT;
+      snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+        "Test de précision requis après montage complet");
+      break;
+    }
+    case 9: {  // T10 — Température driver
+      bool ot   = driver.ot();    // surchauffe >150°C → arrêt driver
+      bool otpw = driver.otpw();  // pré-alerte >120°C
+      if (ot) {
+        diagTests[i].status = DS_FAIL;
+        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+          "SURCHAUFFE (>150°C) — driver arrêté en protection");
+      } else if (otpw) {
+        diagTests[i].status = DS_ALERT;
+        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+          "Pré-alerte température (>120°C) — vérifier ventilation");
+      } else {
+        diagTests[i].status = DS_OK;
+        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
+          "Température normale — DRV_STATUS=0x%08X", (unsigned)driver.DRV_STATUS());
+      }
+      break;
+    }
+  }
+  diagTests[i].durationMs = (int32_t)(millis() - t0);
+}
+
+// Exécution complète d'une étape (utilisée au boot uniquement)
 void runDiagStep(int step) {
   for (int i = 0; i < NUM_DIAG_TESTS; i++) {
-    if (DIAG_STEP_MAP[i] != step) continue;
-    unsigned long t0 = millis();
-    diagTests[i].detail[0] = 0;
-
-    switch (i) {
-      case 0: {  // T01 — Démarrage système
-        uint32_t heap = ESP.getFreeHeap();
-        diagTests[i].status = (heap > 50000) ? DS_OK : DS_ALERT;
-        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-          "CPU OK — heap libre\u00a0: %u kB — %lu ms depuis boot",
-          heap / 1024, millis());
-        break;
-      }
-      case 1: {  // T02 — Connexion WiFi
-        if (WiFi.status() == WL_CONNECTED) {
-          diagTests[i].status = DS_OK;
-          snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-            "Connecté à \"%s\" — IP %s RSSI=%d dBm",
-            WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), WiFi.RSSI());
-        } else {
-          diagTests[i].status = DS_FAIL;
-          snprintf(diagTests[i].detail, sizeof(diagTests[i].detail), "Non connecté");
-        }
-        break;
-      }
-      case 2: {  // T03 — Buck 5V (vérification manuelle)
-        diagTests[i].status = DS_ALERT;
-        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-          "Vérification manuelle — mesurer 5V sur le rail Buck");
-        break;
-      }
-      case 3: {  // T04 — UART → TMC2209
-        driver.begin();
-        uint8_t v = driver.version();
-        if (v == 0x21) {
-          diagTests[i].status = DS_OK;
-          snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-            "TMC2209 détecté — version 0x%02X — UART OK", v);
-        } else if (v == 0x00 || v == 0xFF) {
-          diagTests[i].status = DS_FAIL;
-          snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-            "Pas de réponse TMC2209 (0x%02X) — vérifier câblage PDN_UART", v);
-        } else {
-          diagTests[i].status = DS_ALERT;
-          snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-            "Version inattendue 0x%02X — vérifier adresse UART (MS1/MS2=GND)", v);
-        }
-        break;
-      }
-      case 4: {  // T05 — Config courant + µstepping
-        driver.rms_current(MOTOR_CURRENT);
-        driver.microsteps(MICROSTEPS);
-        diagTests[i].status = DS_OK;
-        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-          "Courant\u00a0: %d mA RMS — Microstepping\u00a0: %d×",
-          MOTOR_CURRENT, MICROSTEPS);
-        break;
-      }
-      case 5: {  // T06 — Alimentation moteur VM
-        diagTests[i].status = DS_ALERT;
-        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-          "Vérification manuelle — mesurer 12V sur VM driver");
-        break;
-      }
-      case 6: {  // T07 — Broche EN
-        digitalWrite(PIN_EN, LOW);
-        delay(10);
-        diagTests[i].status = DS_OK;
-        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-          "Broche EN activée (actif LOW) — driver prêt");
-        setMotorEnabled(false);
-        break;
-      }
-      case 7: {  // T08 — Sens de rotation
-        diagTests[i].status = DS_ALERT;
-        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-          "Vérifier visuellement le sens après connexion moteur");
-        break;
-      }
-      case 8: {  // T09 — Précision microstepping
-        diagTests[i].status = DS_ALERT;
-        snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-          "Test de précision requis après montage complet");
-        break;
-      }
-      case 9: {  // T10 — Température driver
-        bool ot   = driver.ot();    // surchauffe >150°C → arrêt driver
-        bool otpw = driver.otpw();  // pré-alerte >120°C
-        if (ot) {
-          diagTests[i].status = DS_FAIL;
-          snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-            "SURCHAUFFE (>150°C) — driver arrêté en protection");
-        } else if (otpw) {
-          diagTests[i].status = DS_ALERT;
-          snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-            "Pré-alerte température (>120°C) — vérifier ventilation");
-        } else {
-          diagTests[i].status = DS_OK;
-          snprintf(diagTests[i].detail, sizeof(diagTests[i].detail),
-            "Température normale — DRV_STATUS=0x%08X", (unsigned)driver.DRV_STATUS());
-        }
-        break;
-      }
-    }
-    diagTests[i].durationMs = (int32_t)(millis() - t0);
+    if (DIAG_STEP_MAP[i] == step) execDiagTest(i);
   }
+}
+
+// Appelée depuis loop() : exécute un test par itération pour ne pas bloquer le serveur
+void tickDiag() {
+  if (!diagRunning) return;
+  while (diagCurTestIdx < NUM_DIAG_TESTS) {
+    int i = diagCurTestIdx++;
+    if (DIAG_STEP_MAP[i] == diagQueuedStep) {
+      execDiagTest(i);
+      return;  // cède la main au serveur web
+    }
+  }
+  diagRunning = false;
 }
 
 // ===================================================================
@@ -658,23 +733,30 @@ void handleStatus() {
   uint32_t sketch    = ESP.getSketchSize();
   uint32_t flash     = ESP.getFlashChipSize();
 
-  char json[512];
+  bool isMoving = stepper.isRunning();
+  long distToGo = abs(stepper.distanceToGo());
+  long moveTot  = isMoving ? abs(stepper.targetPosition() - moveStartPos) : 0;
+  long speedNow = (long)abs(stepper.speed());
+
+  char json[640];
   snprintf(json, sizeof(json),
     "{\"divisions\":%d,\"currentDiv\":%d,\"steps\":%ld,"
     "\"enabled\":%s,\"moving\":%s,\"rssi\":%d,\"uptime\":%lu,"
     "\"temp\":%d,\"spreadCycle\":%s,"
     "\"heap\":%u,\"heapTotal\":%u,\"sketch\":%u,\"flash\":%u,"
+    "\"distanceToGo\":%ld,\"moveTotal\":%ld,\"speed\":%ld,\"maxSpeed\":%ld,"
     "\"version\":\"" FW_VERSION "\"}",
     numDivisions,
     currentDivision(),
     stepper.currentPosition(),
     motorEnabled ? "true" : "false",
-    stepper.isRunning() ? "true" : "false",
+    isMoving ? "true" : "false",
     WiFi.RSSI(),
     millis(),
     tempState,
     spreadCycleMode ? "true" : "false",
-    freeHeap, heapTotal, sketch, flash);
+    freeHeap, heapTotal, sketch, flash,
+    distToGo, moveTot, speedNow, (long)SPEED_WORK);
   server.send(200, "application/json", json);
 }
 
@@ -694,8 +776,8 @@ void handleDiagAPI() {
   int pos = 0;
 
   pos += snprintf(buf+pos, sizeof(buf)-pos,
-    "{\"counts\":{\"ok\":%d,\"fail\":%d,\"alert\":%d,\"pending\":%d},\"steps\":[",
-    cOk, cFl, cAl, cPe);
+    "{\"running\":%s,\"counts\":{\"ok\":%d,\"fail\":%d,\"alert\":%d,\"pending\":%d},\"steps\":[",
+    diagRunning ? "true" : "false", cOk, cFl, cAl, cPe);
 
   for (int s=1; s<=NUM_DIAG_STEPS; s++) {
     if (s > 1) buf[pos++] = ',';
@@ -733,8 +815,18 @@ void handleDiagRun() {
   if (idx < 0) { server.send(400); return; }
   int step = body.substring(idx + 7).toInt();
   if (step < 1 || step > NUM_DIAG_STEPS) { server.send(400); return; }
-  runDiagStep(step);
-  server.send(200, "application/json", "{\"ok\":true}");
+  // Remettre les tests de l'étape en pending, puis planifier l'exécution
+  for (int i = 0; i < NUM_DIAG_TESTS; i++) {
+    if (DIAG_STEP_MAP[i] == step) {
+      diagTests[i].status     = DS_PENDING;
+      diagTests[i].durationMs = -1;
+      diagTests[i].detail[0]  = 0;
+    }
+  }
+  diagQueuedStep = step;
+  diagCurTestIdx = 0;
+  diagRunning    = true;
+  server.send(200, "application/json", "{\"ok\":true}");  // retour immédiat
 }
 
 void handleSetDivisions() {
@@ -868,4 +960,5 @@ void setup() {
 void loop() {
   server.handleClient();
   stepper.run();
+  tickDiag();
 }
