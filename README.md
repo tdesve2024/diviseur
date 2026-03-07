@@ -484,6 +484,8 @@ l'Arduino pendant 10 s au démarrage (active le portail captif de WiFiManager).
 | POST | `/api/mode` | `{"spreadCycle":true}` | Basculer StealthChop ↔ SpreadCycle |
 | GET | `/api/diag` | — | État des tests (champ `running`) |
 | POST | `/api/diag/run` | `{"step":1}` | Lancer une étape de test (1–4) |
+| POST | `/api/diag/reset` | `{"step":1}` | Remettre tous les tests d'une étape en attente |
+| POST | `/api/diag/set` | `{"idx":2,"status":1}` | Valider manuellement un test (status: 1=OK, 2=FAIL) |
 
 ---
 

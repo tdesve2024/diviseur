@@ -40,7 +40,7 @@
 #define ACCEL_WORK      4000.0f
 #define SPEED_JOG       1600.0f
 
-#define FW_VERSION      "1.7"
+#define FW_VERSION      "1.8"
 
 const long STEPS_PER_TURN =
     (long)STEPS_PER_REV * MICROSTEPS * GEAR_RATIO;  // 128 000
@@ -472,6 +472,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif;ba
 .btest{background:#3d7ae8;color:#fff;border:none;border-radius:10px;padding:9px 14px;font-size:.75em;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;-webkit-tap-highlight-color:transparent;box-shadow:0 3px 10px rgba(61,122,232,.25)}
 .btest:active{opacity:.7}
 .btest.running{background:#eff4ff;color:#7a90a8;box-shadow:none}
+.breset{background:#f5f7fb;color:#7a90a8;border:1px solid #dde6f5;border-radius:9px;padding:9px 10px;font-size:.8em;cursor:pointer;white-space:nowrap;flex-shrink:0;-webkit-tap-highlight-color:transparent}
+.breset:active{opacity:.6}
+/* Boutons validation manuelle OK / KO */
+.ti-actions{display:flex;gap:6px;margin-top:8px}
+.ta-ok,.ta-ko{border:none;border-radius:8px;padding:7px 14px;font-size:.72em;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.ta-ok{background:#d4f7e0;color:#1a8a3a}
+.ta-ko{background:#fde0e0;color:#c02020}
+.ta-ok:active,.ta-ko:active{opacity:.65}
 /* Test items */
 .ti{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border-radius:10px;margin-bottom:6px;border-left:3px solid #e8eef6;background:#f8faff}
 .ti-ok{border-left-color:#34c759;background:#f0fdf4}
@@ -521,18 +529,18 @@ function load(){
     document.getElementById('cfl').textContent=d.counts.fail;
     document.getElementById('cal').textContent=d.counts.alert;
     document.getElementById('cpe').textContent=d.counts.pending;
-    // Adapter la vitesse de polling selon l'état running
     schedPoll(!!d.running);
     const sc=document.getElementById('steps');
     sc.innerHTML='';
     d.steps.forEach(s=>{
       const c=document.createElement('div');
       c.className='card';
-      // Désactiver le bouton si un test est en cours pour cette étape
       const stepRunning=d.running&&(d.tests||[]).some(t=>t.step===s.n&&t.status===0);
+      const stepDone=(d.tests||[]).some(t=>t.step===s.n&&t.status!==0);
       let h=`<div class="shdr">
         <div class="sbdg">\u00c9TAPE ${s.n}</div>
         <div class="si"><div class="st">${esc(s.title)}</div><div class="sd">${esc(s.desc)}</div></div>
+        <button class="breset" title="R\u00e9initialiser" onclick="reset(${s.n})"${stepRunning?' disabled':''}>\u21ba</button>
         <button class="btest${stepRunning?' running':''}" id="btn${s.n}" onclick="run(${s.n},this)"${stepRunning?' disabled':''}>
           ${stepRunning?'\u23f3 Test\u2026':'\u25b6 Tester'}</button>
       </div>`;
@@ -542,10 +550,16 @@ function load(){
         const bt=t.status===1?'OK':t.status===2?'FAIL':t.status===3?'ALERTE':'...';
         const dur=t.duration>=0?`<div class="tdr">${t.duration}ms</div>`:'';
         const det=t.detail?`<div class="td">${esc(t.detail)}</div>`:'';
+        // Boutons de validation manuelle pour les tests en ALERTE
+        const idx=parseInt(t.id.substring(1))-1;
+        const actions=t.status===3?`<div class="ti-actions">
+          <button class="ta-ok" onclick="setResult(${idx},1)">\u2713 OK</button>
+          <button class="ta-ko" onclick="setResult(${idx},2)">\u2717 KO</button>
+        </div>`:'';
         h+=`<div class="ti ${cls}">
           <div class="tid">${t.id}</div>
           <div class="tbdg ${bc}">${bt}</div>
-          <div class="tb"><div class="tn">${esc(t.name)}</div>${det}</div>
+          <div class="tb"><div class="tn">${esc(t.name)}</div>${det}${actions}</div>
           ${dur}
         </div>`;
       });
@@ -559,6 +573,14 @@ function run(n,btn){
   fetch('/api/diag/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({step:n})})
     .then(()=>{schedPoll(true);load();})
     .catch(()=>load());
+}
+function reset(n){
+  fetch('/api/diag/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({step:n})})
+    .then(()=>load()).catch(()=>load());
+}
+function setResult(idx,status){
+  fetch('/api/diag/set',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idx,status})})
+    .then(()=>load()).catch(()=>load());
 }
 schedPoll(false);load();
 </script>
@@ -834,6 +856,39 @@ void handleDiagRun() {
   server.send(200, "application/json", "{\"ok\":true}");  // retour immédiat
 }
 
+// Réinitialise tous les tests d'une étape → DS_PENDING (sans les relancer)
+void handleDiagReset() {
+  if (!server.hasArg("plain")) { server.send(400); return; }
+  String body = server.arg("plain");
+  int idx = body.indexOf("\"step\":");
+  if (idx < 0) { server.send(400); return; }
+  int step = body.substring(idx + 7).toInt();
+  if (step < 1 || step > NUM_DIAG_STEPS) { server.send(400); return; }
+  for (int i = 0; i < NUM_DIAG_TESTS; i++) {
+    if (DIAG_STEP_MAP[i] == step) {
+      diagTests[i].status     = DS_PENDING;
+      diagTests[i].durationMs = -1;
+      diagTests[i].detail[0]  = 0;
+    }
+  }
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// Valide manuellement le résultat d'un test (OK ou FAIL) — pour les tests d'alerte
+void handleDiagSet() {
+  if (!server.hasArg("plain")) { server.send(400); return; }
+  String body = server.arg("plain");
+  int ii = body.indexOf("\"idx\":");
+  int si = body.indexOf("\"status\":");
+  if (ii < 0 || si < 0) { server.send(400); return; }
+  int testIdx = body.substring(ii + 6).toInt();
+  int status  = body.substring(si + 9).toInt();
+  if (testIdx < 0 || testIdx >= NUM_DIAG_TESTS) { server.send(400); return; }
+  if (status < 1 || status > 2) { server.send(400); return; }  // 1=OK, 2=FAIL uniquement
+  diagTests[testIdx].status = (DiagStatus)status;
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
 void handleSetDivisions() {
   if (!server.hasArg("plain")) { server.send(400); return; }
   int idx = server.arg("plain").indexOf("\"n\":");
@@ -937,8 +992,6 @@ void setup() {
   Serial.println("WiFiManager — connexion en cours...");
   if (wm.autoConnect("Diviseur-Setup")) {
     Serial.printf("Connecté\u00a0! IP\u00a0: http://%s\n", WiFi.localIP().toString().c_str());
-    // Lancer automatiquement les tests de l'étape 1
-    runDiagStep(1);
   } else {
     Serial.println("Échec WiFi — redémarrage dans 10 s...");
     delay(10000);
@@ -949,8 +1002,10 @@ void setup() {
   server.on("/",              HTTP_GET,  handleRoot);
   server.on("/diag",          HTTP_GET,  handleDiagPage);
   server.on("/api/status",    HTTP_GET,  handleStatus);
-  server.on("/api/diag",      HTTP_GET,  handleDiagAPI);
-  server.on("/api/diag/run",  HTTP_POST, handleDiagRun);
+  server.on("/api/diag",       HTTP_GET,  handleDiagAPI);
+  server.on("/api/diag/run",   HTTP_POST, handleDiagRun);
+  server.on("/api/diag/reset", HTTP_POST, handleDiagReset);
+  server.on("/api/diag/set",   HTTP_POST, handleDiagSet);
   server.on("/api/divisions", HTTP_POST, handleSetDivisions);
   server.on("/api/move",      HTTP_POST, handleMove);
   server.on("/api/home",      HTTP_POST, handleHome);
