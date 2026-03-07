@@ -40,7 +40,7 @@
 #define ACCEL_WORK      4000.0f
 #define SPEED_JOG       1600.0f
 
-#define FW_VERSION      "1.9"
+#define FW_VERSION      "2.1"
 
 const long STEPS_PER_TURN =
     (long)STEPS_PER_REV * MICROSTEPS * GEAR_RATIO;  // 128 000
@@ -150,12 +150,22 @@ hr{border:none;border-top:1px solid #e8eef6;margin:16px 0}
 .ml{font-size:.6em;color:#7a90a8;letter-spacing:.08em;margin-top:4px;text-transform:uppercase}
 /* Navigation buttons */
 .nav{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
-.br,.ba{border:none;border-radius:16px;padding:22px 12px;font-size:1em;font-weight:800;cursor:pointer;letter-spacing:.05em;width:100%;transition:transform .1s,opacity .1s;-webkit-tap-highlight-color:transparent}
+.br,.ba{border:none;border-radius:16px;padding:26px 12px;font-size:1em;font-weight:800;cursor:pointer;letter-spacing:.05em;width:100%;transition:transform .1s,opacity .1s;-webkit-tap-highlight-color:transparent}
 .br{background:#eff4ff;color:#3d7ae8;border:1.5px solid #c7d7f8}
 .ba{background:#3d7ae8;color:#fff;box-shadow:0 4px 16px rgba(61,122,232,.28)}
 .br:active,.ba:active{transform:scale(.96);opacity:.85}
-.bz{width:100%;background:#f5f7fb;color:#7a90a8;border:1.5px solid #dde6f5;border-radius:14px;padding:15px;font-size:.88em;font-weight:600;cursor:pointer;letter-spacing:.04em;margin-bottom:10px;transition:opacity .1s;-webkit-tap-highlight-color:transparent}
+.bz{width:100%;background:#f5f7fb;color:#7a90a8;border:1.5px solid #dde6f5;border-radius:14px;padding:15px;font-size:.88em;font-weight:600;cursor:pointer;letter-spacing:.04em;margin-bottom:10px;transition:opacity .1s;-webkit-tap-highlight-color:transparent;position:relative;overflow:hidden}
+.bz-bar{position:absolute;left:0;top:0;height:100%;width:0%;background:#3d7ae8;opacity:.15;pointer-events:none;border-radius:inherit}
 .bz:active{opacity:.7}
+/* Flash fin de mouvement */
+@keyframes flashOk{0%{box-shadow:0 4px 16px rgba(61,122,232,.28)}50%{box-shadow:0 0 30px rgba(52,199,89,.8)}100%{box-shadow:0 4px 16px rgba(61,122,232,.28)}}
+.ba.flash-ok{animation:flashOk .55s ease-out}
+/* Favoris rapides */
+.favs{display:flex;gap:7px;overflow-x:auto;margin-bottom:10px;-ms-overflow-style:none;scrollbar-width:none}
+.favs::-webkit-scrollbar{display:none}
+.fav{background:#eff4ff;color:#3d7ae8;border:1.5px solid #c7d7f8;border-radius:10px;padding:10px 0;font-size:.8em;font-weight:700;cursor:pointer;min-width:54px;text-align:center;flex-shrink:0;-webkit-tap-highlight-color:transparent}
+.fav.cur{background:#3d7ae8;color:#fff;border-color:#3d7ae8}
+.fav:active{opacity:.6}
 .bst{width:100%;background:#fff0f0;color:#e03030;border:1.5px solid #ffd0cd;border-radius:14px;padding:15px;font-size:.95em;font-weight:800;cursor:pointer;letter-spacing:.06em;transition:opacity .1s;-webkit-tap-highlight-color:transparent}
 .bst:active{opacity:.7}
 /* Division picker */
@@ -230,10 +240,11 @@ hr{border:none;border-top:1px solid #e8eef6;margin:16px 0}
   </div>
 
   <div class="card">
-    <div class="nav">
+    <div class="nav" id="navZone">
       <button class="br" id="btnRecul" onclick="mv(-1)">&#9664; RECUL</button>
       <button class="ba" id="btnAvance" onclick="mv(1)">AVANCE &#9654;</button>
     </div>
+    <div class="favs" id="favRow"></div>
     <div class="pgwrap" id="pgwrap" style="display:none">
       <div class="pgtrack"><div class="pgfill" id="pgfill"></div></div>
       <div class="pginfo">
@@ -242,7 +253,7 @@ hr{border:none;border-top:1px solid #e8eef6;margin:16px 0}
         <span id="pgpct">0%</span>
       </div>
     </div>
-    <button class="bz" onclick="home()">&#8635;&nbsp; REMETTRE &Agrave; Z&Eacute;RO</button>
+    <button class="bz" id="btnHome"><div class="bz-bar" id="bzBar"></div>&#8635;&nbsp; REMETTRE &Agrave; Z&Eacute;RO <small style="color:#b8c8d8;font-weight:400">(maintenir)</small></button>
     <button class="bst" onclick="stopMotor()">&#9632;&nbsp; STOP D&rsquo;URGENCE</button>
   </div>
 
@@ -304,10 +315,31 @@ hr{border:none;border-top:1px solid #e8eef6;margin:16px 0}
 </div>
 
 <script>
-let sc=false,en=false,kv='',updTimer=null;
+let sc=false,en=false,kv='',updTimer=null,wasMoving=false,lastMvTime=0;
+let homeTimer=null,homeInterval=null,wakeLock=null;
+const FAVS=[3,4,6,8,12,18,24,36];
 const TEMP_LABELS=['OK','CHAUD','STOP'];
 const TEMP_COLORS=['#34c759','#ff9500','#e03030'];
 const PRESETS=[2,3,4,5,6,8,10,12,15,18,20,24,30,36,40,45,60,72,90,120,180,360];
+/* Wake Lock — écran toujours allumé */
+async function acquireWakeLock(){
+  try{if('wakeLock' in navigator)wakeLock=await navigator.wakeLock.request('screen');}catch(e){}
+}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')acquireWakeLock();});
+acquireWakeLock();
+/* Favoris rapides */
+function renderFavs(cur){
+  const fr=document.getElementById('favRow');
+  if(!fr)return;
+  fr.innerHTML='';
+  FAVS.forEach(n=>{
+    const b=document.createElement('button');
+    b.className='fav'+(n===cur?' cur':'');
+    b.textContent=n;
+    b.onclick=()=>{fetch('/api/divisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({n})}).then(()=>upd());};
+    fr.appendChild(b);
+  });
+}
 function schedUpd(fast){
   if(updTimer)clearInterval(updTimer);
   updTimer=setInterval(upd,fast?300:1500);
@@ -326,8 +358,16 @@ function upd(){
     te.textContent=TEMP_LABELS[t];
     te.style.color=TEMP_COLORS[t];
     const moving=d.moving;
-    document.getElementById('sbarTxt').textContent=moving?'EN MOUVEMENT':'PR\u00caT';
+    /* Barre de statut avec division courante */
+    const st=moving?'EN MOUVEMENT \u2014 '+d.currentDiv+'\u202f\u2215\u202f'+d.divisions:'PR\u00caT \u2014 Div.\u202f'+d.currentDiv+'\u202f\u2215\u202f'+d.divisions;
+    document.getElementById('sbarTxt').textContent=st;
     document.getElementById('dot').className='dot'+(moving?' moving':'');
+    /* Flash en fin de mouvement */
+    if(wasMoving&&!moving){
+      const ba=document.getElementById('btnAvance');
+      if(ba){ba.classList.add('flash-ok');setTimeout(()=>ba.classList.remove('flash-ok'),550);}
+    }
+    wasMoving=moving;
     // Bloquer RECUL/AVANCE pendant le mouvement
     ['btnRecul','btnAvance'].forEach(id=>{
       const b=document.getElementById(id);
@@ -368,6 +408,7 @@ function upd(){
     }
     if(d.spreadCycle!==undefined&&d.spreadCycle!==sc){sc=d.spreadCycle;renderMode();}
     if(d.enabled!==undefined&&d.enabled!==en){en=d.enabled;renderEnable();}
+    renderFavs(d.divisions);
     schedUpd(moving);  // polling rapide (300ms) pendant le mouvement, lent sinon
   }).catch(()=>{});
 }
@@ -381,6 +422,9 @@ function renderEnable(){
   document.getElementById('metg').className='tg'+(en?' on':'');
 }
 function mv(dir){
+  const now=Date.now();
+  if(now-lastMvTime<500)return;
+  lastMvTime=now;
   fetch('/api/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dir})})
     .then(()=>setTimeout(upd,300));
 }
@@ -392,6 +436,43 @@ function chg(d){
 }
 function tgm(){sc=!sc;renderMode();fetch('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spreadCycle:sc})});}
 function tge(){en=!en;renderEnable();fetch('/api/enable',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enable:en})});}
+/* HOME — appui long 800 ms avec barre de progression */
+(function(){
+  const btn=document.getElementById('btnHome');
+  const bar=document.getElementById('bzBar');
+  if(!btn||!bar)return;
+  function start(e){
+    e.preventDefault();
+    bar.style.transition='none';bar.style.width='0%';
+    let w=0;
+    homeInterval=setInterval(()=>{w+=100/8;bar.style.width=Math.min(100,w)+'%';},100);
+    homeTimer=setTimeout(()=>{
+      clearInterval(homeInterval);homeInterval=null;homeTimer=null;
+      bar.style.width='0%';home();
+    },800);
+  }
+  function cancel(){
+    if(homeTimer){clearTimeout(homeTimer);homeTimer=null;}
+    if(homeInterval){clearInterval(homeInterval);homeInterval=null;}
+    bar.style.transition='width .3s';bar.style.width='0%';
+  }
+  btn.addEventListener('pointerdown',start);
+  btn.addEventListener('pointerup',cancel);
+  btn.addEventListener('pointerleave',cancel);
+  btn.addEventListener('pointercancel',cancel);
+})();
+/* Swipe horizontal AVANCE / RECUL sur la zone de navigation */
+(function(){
+  const zone=document.getElementById('navZone');
+  if(!zone)return;
+  let tx=0,ty=0;
+  zone.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY;},{passive:true});
+  zone.addEventListener('touchend',e=>{
+    const dx=e.changedTouches[0].clientX-tx;
+    const dy=e.changedTouches[0].clientY-ty;
+    if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5)mv(dx<0?1:-1);
+  },{passive:true});
+})();
 /* Clavier numérique */
 function kbdOpen(){
   kv=document.getElementById('nd').textContent;
@@ -423,7 +504,7 @@ function kbdOk(){
   if(n>=2&&n<=360)
     fetch('/api/divisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({n})}).then(()=>upd());
 }
-schedUpd(false);upd();
+schedUpd(false);upd();renderFavs(6);
 </script>
 </body>
 </html>
