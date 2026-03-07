@@ -40,7 +40,7 @@
 #define ACCEL_WORK      4000.0f
 #define SPEED_JOG       1600.0f
 
-#define FW_VERSION      "1.6"
+#define FW_VERSION      "1.7"
 
 const long STEPS_PER_TURN =
     (long)STEPS_PER_REV * MICROSTEPS * GEAR_RATIO;  // 128 000
@@ -304,10 +304,14 @@ hr{border:none;border-top:1px solid #e8eef6;margin:16px 0}
 </div>
 
 <script>
-let sc=false,en=false,kv='';
+let sc=false,en=false,kv='',updTimer=null;
 const TEMP_LABELS=['OK','CHAUD','STOP'];
 const TEMP_COLORS=['#34c759','#ff9500','#e03030'];
 const PRESETS=[2,3,4,5,6,8,10,12,15,18,20,24,30,36,40,45,60,72,90,120,180,360];
+function schedUpd(fast){
+  if(updTimer)clearInterval(updTimer);
+  updTimer=setInterval(upd,fast?300:1500);
+}
 function upd(){
   fetch('/api/status').then(r=>r.json()).then(d=>{
     document.getElementById('dc').textContent=d.currentDiv;
@@ -364,6 +368,7 @@ function upd(){
     }
     if(d.spreadCycle!==undefined&&d.spreadCycle!==sc){sc=d.spreadCycle;renderMode();}
     if(d.enabled!==undefined&&d.enabled!==en){en=d.enabled;renderEnable();}
+    schedUpd(moving);  // polling rapide (300ms) pendant le mouvement, lent sinon
   }).catch(()=>{});
 }
 function renderMode(){
@@ -418,7 +423,7 @@ function kbdOk(){
   if(n>=2&&n<=360)
     fetch('/api/divisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({n})}).then(()=>upd());
 }
-setInterval(upd,1500);upd();
+schedUpd(false);upd();
 </script>
 </body>
 </html>
