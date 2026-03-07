@@ -2,10 +2,7 @@
 
 ## En attente
 
-- [ ] remplacer pas/div par ang/div dans le premier panneau
-- [ ] Insérer une barre de progression qui donne le nombre de step à faire pour l'exécution (en fonction du paramétrage). Si possible mettre en évidence vitesse et accélération/décélération
-- [ ] Bloquer les boutons avance et recule pendant l'exécution
-- [ ] Tests diagnostics non-bloquants : l'interface se fige pendant l'exécution d'une étape si les lectures UART ont des timeouts. Envisager une exécution test-par-test ou un mécanisme polling côté client.
+_(aucun point en attente)_
 
 ## Terminé
 
@@ -30,3 +27,10 @@
 - [x] Pour la saisie des divisions, un clavier numérique en popup serait plus pratique → **clavier 3×4 avec préréglages en chips**
 - [x] Dans le titre, à côté du Cowells RGB61, on peut rappeler le rapport de division (40:1) → **sous-titre : Cowells RGB61 · 40:1 · NEMA 14 · vX.Y**
 - [x] On pourrait indiquer un numéro de version, chaque commit incrémente un indice → **v1.0 défini par `#define FW_VERSION`, retourné par l'API**
+- [x] remplacer pas/div par ang/div dans le premier panneau → **label "Ang / div." (v1.6)**
+- [x] Insérer une barre de progression qui donne le nombre de step à faire pour l'exécution (en fonction du paramétrage). Si possible mettre en évidence vitesse et accélération/décélération → **barre animée : largeur = %, couleur = phase Accel./Vitesse max/Décel., affichage pas/s (v1.6)**
+- [x] Bloquer les boutons avance et recule pendant l'exécution → **RECUL/AVANCE disabled + opacity 35% quand moving (v1.6)**
+- [x] Tests diagnostics non-bloquants : l'interface se fige pendant l'exécution d'une étape si les lectures UART ont des timeouts. Envisager une exécution test-par-test ou un mécanisme polling côté client → **tickDiag() dans loop(), POST retour immédiat, polling JS adaptatif (v1.5)**
+- [x] Tests diagnostics : pas d'auto-lancement au boot → **suppression de runDiagStep(1) dans setup() (v1.8)**
+- [x] Tests manuels : boutons ✓ OK / ✗ KO pour les tests en statut ALERTE → **/api/diag/set, validation manuelle depuis l'interface (v1.8)**
+- [x] Réinitialisation par groupe de tests → **bouton ↺ par étape, /api/diag/reset (v1.8)**

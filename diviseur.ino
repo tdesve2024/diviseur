@@ -40,7 +40,7 @@
 #define ACCEL_WORK      4000.0f
 #define SPEED_JOG       1600.0f
 
-#define FW_VERSION      "1.8"
+#define FW_VERSION      "1.9"
 
 const long STEPS_PER_TURN =
     (long)STEPS_PER_REV * MICROSTEPS * GEAR_RATIO;  // 128 000
