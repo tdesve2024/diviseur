@@ -1,29 +1,20 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  deploy.sh — Télécharge, compile et téléverse le diviseur RGB61
+#  deploy.sh — Compile et téléverse un sketch Arduino Nano ESP32
 #  Usage :
-#    ./deploy.sh               # compile seulement (détection port auto)
-#    ./deploy.sh /dev/ttyACM0  # port explicite
-#    ./deploy.sh --no-upload   # compile sans téléverser
+#    ./deploy.sh <projet>                  # compile + upload (port auto)
+#    ./deploy.sh <projet> /dev/ttyACM0    # port explicite
+#    ./deploy.sh <projet> --no-upload     # compile sans téléverser
+#
+#  <projet> est le nom d'un sous-dossier contenant <projet>.ino et sketch.cfg
 # =============================================================================
 
 set -euo pipefail
 
-# ── Configuration ─────────────────────────────────────────────────────────────
-REPO_URL="https://github.com/tdesve2024/diviseur"   # ← adapter si besoin
-
-SKETCH_NAME="diviseur"
-BUILD_DIR="${TMPDIR:-/tmp}/diviseur"
-FQBN="arduino:esp32:nano_nora"      # Arduino Nano ESP32 (nora)
+REPO_URL="https://github.com/tdesve2024/nano32"
 
 CORE_PLATFORM="arduino:esp32"
 CORE_INDEX="https://downloads.arduino.cc/packages/package_esp32_index.json"
-
-LIBRARIES=(
-  "WiFiManager"   # tzapu
-  "TMCStepper"    # teemuatlut
-  "AccelStepper"  # Mike McCaulay
-)
 
 # ── Couleurs terminal ──────────────────────────────────────────────────────────
 GRN='\033[0;32m'; YLW='\033[0;33m'; RED='\033[0;31m'; BLU='\033[0;34m'; NC='\033[0m'
@@ -34,7 +25,6 @@ die() { echo -e "${RED}✗ $*${NC}" >&2; exit 1; }
 
 # ── Sélection interactive de la branche ───────────────────────────────────────
 pick_branch() {
-  # Branche courante du dépôt local où tourne ce script (défaut si interactif)
   local default_branch
   default_branch=$(git -C "$(dirname "$0")" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
 
@@ -64,7 +54,6 @@ pick_branch() {
   done <<< "$branches"
 
   echo ""
-  # Si non interactif (CI / pipe), utiliser le défaut sans prompt
   if [ ! -t 0 ]; then
     echo "$default_branch"
     return
@@ -85,23 +74,40 @@ pick_branch() {
 }
 
 # ── Arguments ─────────────────────────────────────────────────────────────────
+SKETCH_NAME=""
 PORT_ARG=""
 UPLOAD=true
+
 for arg in "$@"; do
   case "$arg" in
     --no-upload) UPLOAD=false ;;
     /dev/*)      PORT_ARG="$arg" ;;
-    *) die "Argument inconnu : $arg" ;;
+    -*)          die "Option inconnue : $arg" ;;
+    *)           [ -z "$SKETCH_NAME" ] && SKETCH_NAME="$arg" || die "Argument inattendu : $arg" ;;
   esac
 done
 
+[ -n "$SKETCH_NAME" ] || die "Usage : $0 <projet> [/dev/ttyACM0] [--no-upload]"
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SKETCH_CFG="$SCRIPT_DIR/$SKETCH_NAME/sketch.cfg"
+[ -f "$SKETCH_CFG" ] || die "Projet introuvable : '$SKETCH_NAME' (pas de $SKETCH_CFG)"
+
+# Valeurs par défaut surchargées par sketch.cfg
+FQBN="arduino:esp32:nano_nora"
+LIBRARIES=()
+# shellcheck source=/dev/null
+source "$SKETCH_CFG"
+
+BUILD_DIR="${TMPDIR:-/tmp}/nano32_${SKETCH_NAME}"
+
 echo ""
 echo "════════════════════════════════════════"
-echo "  Diviseur Cowells RGB61 — Deploy script"
+echo "  nano32 / ${SKETCH_NAME} — Deploy script"
 echo "════════════════════════════════════════"
 echo ""
 
-# ── Vérification prérequis ─────────────────────────────────────────────────────
+# ── Vérification prérequis ────────────────────────────────────────────────────
 inf "Vérification des prérequis..."
 command -v arduino-cli >/dev/null 2>&1 || die "arduino-cli introuvable — https://arduino.github.io/arduino-cli/latest/installation/"
 command -v git        >/dev/null 2>&1 || die "git introuvable"
@@ -124,18 +130,20 @@ else
 fi
 
 # ── Bibliothèques ─────────────────────────────────────────────────────────────
-inf "Vérification des bibliothèques..."
-for lib in "${LIBRARIES[@]}"; do
-  if arduino-cli lib list 2>/dev/null | grep -qi "^${lib}"; then
-    ok "  $lib"
-  else
-    inf "  Installation de ${lib}..."
-    arduino-cli lib install "$lib"
-    ok "  $lib installé"
-  fi
-done
+if [ ${#LIBRARIES[@]} -gt 0 ]; then
+  inf "Vérification des bibliothèques..."
+  for lib in "${LIBRARIES[@]}"; do
+    if arduino-cli lib list 2>/dev/null | grep -qi "^${lib}"; then
+      ok "  $lib"
+    else
+      inf "  Installation de ${lib}..."
+      arduino-cli lib install "$lib"
+      ok "  $lib installé"
+    fi
+  done
+fi
 
-# ── Récupération du code ───────────────────────────────────────────────────────
+# ── Récupération du code ──────────────────────────────────────────────────────
 inf "Récupération du code depuis GitHub..."
 if [ -d "$BUILD_DIR/.git" ]; then
   inf "Mise à jour du dépôt existant..."
@@ -147,24 +155,23 @@ else
   git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$BUILD_DIR"
 fi
 
-SKETCH_PATH="$BUILD_DIR/$SKETCH_NAME.ino"
+SKETCH_PATH="$BUILD_DIR/$SKETCH_NAME/$SKETCH_NAME.ino"
 [ -f "$SKETCH_PATH" ] || die "Sketch introuvable : $SKETCH_PATH"
 
 VERSION=$(grep 'FW_VERSION' "$SKETCH_PATH" | grep -o '"[0-9.]*"' | tr -d '"')
-ok "Sketch v${VERSION} récupéré → $BUILD_DIR"
+ok "Sketch v${VERSION} récupéré → $SKETCH_PATH"
 
-# ── Compilation ────────────────────────────────────────────────────────────────
-COMPILE_OUT="$BUILD_DIR/build"
+# ── Compilation ───────────────────────────────────────────────────────────────
+COMPILE_OUT="$BUILD_DIR/$SKETCH_NAME/build"
 inf "Compilation pour ${FQBN}..."
 arduino-cli compile \
   --fqbn "$FQBN" \
   --output-dir "$COMPILE_OUT" \
   --warnings default \
-  "$BUILD_DIR" \
+  "$BUILD_DIR/$SKETCH_NAME" \
   2>&1 | grep -v "^$" | while IFS= read -r line; do
-    # Colorer les warnings et erreurs
-    if echo "$line" | grep -q "error:";   then echo -e "${RED}$line${NC}"
-    elif echo "$line" | grep -q "warning:"; then echo -e "${YLW}$line${NC}"
+    if echo "$line" | grep -q "error:";                        then echo -e "${RED}$line${NC}"
+    elif echo "$line" | grep -q "warning:";                    then echo -e "${YLW}$line${NC}"
     elif echo "$line" | grep -q "Sketch uses\|Global variables"; then echo -e "${GRN}$line${NC}"
     else echo "$line"
     fi
@@ -174,7 +181,7 @@ FIRMWARE="$COMPILE_OUT/${SKETCH_NAME}.ino.bin"
 [ -f "$FIRMWARE" ] || FIRMWARE="$(find "$COMPILE_OUT" -name '*.bin' | head -1)"
 [ -f "$FIRMWARE" ] || die "Firmware .bin introuvable après compilation"
 SIZE=$(du -h "$FIRMWARE" | cut -f1)
-ok "Compilation réussie — firmware : $SIZE ($FIRMWARE)"
+ok "Compilation réussie — firmware : $SIZE"
 
 # ── Upload ────────────────────────────────────────────────────────────────────
 if [ "$UPLOAD" = false ]; then
@@ -182,16 +189,9 @@ if [ "$UPLOAD" = false ]; then
   exit 0
 fi
 
-# Détection automatique du port si non fourni
 if [ -z "$PORT_ARG" ]; then
   inf "Détection automatique du port série..."
-  # Tenter plusieurs patterns typiques Arduino Nano ESP32
-  for pattern in \
-    "/dev/cu.usbmodem*" \
-    "/dev/ttyACM*" \
-    "/dev/ttyUSB*" \
-    "/dev/cu.SLAB_*"
-  do
+  for pattern in "/dev/cu.usbmodem*" "/dev/ttyACM*" "/dev/ttyUSB*" "/dev/cu.SLAB_*"; do
     # shellcheck disable=SC2086
     PORT_FOUND=$(ls $pattern 2>/dev/null | head -1 || true)
     if [ -n "$PORT_FOUND" ]; then
@@ -200,7 +200,6 @@ if [ -z "$PORT_ARG" ]; then
     fi
   done
 
-  # Fallback : laisser arduino-cli trouver
   if [ -z "$PORT_ARG" ]; then
     wrn "Aucun port détecté automatiquement — essai avec arduino-cli board list..."
     PORT_ARG=$(arduino-cli board list 2>/dev/null \
@@ -208,7 +207,7 @@ if [ -z "$PORT_ARG" ]; then
       | awk '{print $1}' | head -1 || true)
   fi
 
-  [ -n "$PORT_ARG" ] || die "Port série introuvable. Précisez-le : $0 /dev/ttyACM0"
+  [ -n "$PORT_ARG" ] || die "Port série introuvable. Précisez-le : $0 $SKETCH_NAME /dev/ttyACM0"
 fi
 
 ok "Port : $PORT_ARG"
@@ -218,8 +217,8 @@ arduino-cli upload \
   --fqbn "$FQBN" \
   --port "$PORT_ARG" \
   --input-dir "$COMPILE_OUT" \
-  "$BUILD_DIR"
+  "$BUILD_DIR/$SKETCH_NAME"
 
 echo ""
-ok "Téléversement terminé ! Diviseur RGB61 v${VERSION} opérationnel."
+ok "Téléversement terminé ! ${SKETCH_NAME} v${VERSION} opérationnel."
 echo ""
