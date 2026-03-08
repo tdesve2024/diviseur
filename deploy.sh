@@ -28,39 +28,39 @@ pick_branch() {
   local default_branch
   default_branch=$(git -C "$(dirname "$0")" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
 
-  inf "Récupération des branches disponibles sur GitHub..."
+  inf "Récupération des branches disponibles sur GitHub..." >&2
   local branches
   branches=$(git ls-remote --heads "$REPO_URL" 2>/dev/null | sed 's|.*refs/heads/||' | sort)
 
   if [ -z "$branches" ]; then
-    wrn "Impossible de lister les branches — utilisation de '${default_branch}'"
+    wrn "Impossible de lister les branches — utilisation de '${default_branch}'" >&2
     echo "$default_branch"
     return
   fi
 
-  echo ""
-  echo "  Branches disponibles :"
+  echo "" >&2
+  echo "  Branches disponibles :" >&2
   local i=1 default_idx=1
   local -a branch_array
   while IFS= read -r b; do
     branch_array+=("$b")
     if [ "$b" = "$default_branch" ]; then
       default_idx=$i
-      echo -e "    ${GRN}[$i]${NC} $b  ${YLW}← défaut${NC}"
+      echo -e "    ${GRN}[$i]${NC} $b  ${YLW}← défaut${NC}" >&2
     else
-      echo "    [$i] $b"
+      echo "    [$i] $b" >&2
     fi
     (( i++ ))
   done <<< "$branches"
 
-  echo ""
+  echo "" >&2
   if [ ! -t 0 ]; then
     echo "$default_branch"
     return
   fi
 
   while true; do
-    printf "  Choisissez une branche [%s] : " "$default_idx"
+    printf "  Choisissez une branche [%s] : " "$default_idx" >&2
     local choice
     read -r choice
     choice=${choice:-$default_idx}
@@ -69,7 +69,7 @@ pick_branch() {
       echo "${branch_array[$((choice - 1))]}"
       return
     fi
-    echo -e "  ${RED}Choix invalide — entrez un numéro entre 1 et ${#branch_array[@]}${NC}"
+    echo -e "  ${RED}Choix invalide — entrez un numéro entre 1 et ${#branch_array[@]}${NC}" >&2
   done
 }
 
