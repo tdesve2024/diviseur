@@ -70,17 +70,18 @@ pick_branch() {
     return
   fi
 
-  printf "  Choisissez une branche [%s] : " "$default_idx"
-  local choice
-  read -r choice
-  choice=${choice:-$default_idx}
+  while true; do
+    printf "  Choisissez une branche [%s] : " "$default_idx"
+    local choice
+    read -r choice
+    choice=${choice:-$default_idx}
 
-  if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#branch_array[@]} )); then
-    echo "${branch_array[$((choice - 1))]}"
-  else
-    wrn "Choix invalide — utilisation de '${default_branch}'"
-    echo "$default_branch"
-  fi
+    if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#branch_array[@]} )); then
+      echo "${branch_array[$((choice - 1))]}"
+      return
+    fi
+    echo -e "  ${RED}Choix invalide — entrez un numéro entre 1 et ${#branch_array[@]}${NC}"
+  done
 }
 
 # ── Arguments ─────────────────────────────────────────────────────────────────
