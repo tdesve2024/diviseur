@@ -11,7 +11,7 @@ set -euo pipefail
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 REPO_URL="https://github.com/tdesve2024/diviseur"   # ← adapter si besoin
-BRANCH="claude/continue-divisor-project-cs9OG"
+BRANCH="main"
 
 SKETCH_NAME="diviseur"
 BUILD_DIR="${TMPDIR:-/tmp}/diviseur"
