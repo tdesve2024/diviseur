@@ -7,24 +7,140 @@ Rapport 40:1 · NEMA 14 · TMC2209 · Arduino Nano ESP32.
 
 ## Table des matières
 
-1. [Architecture matérielle](#1-architecture-matérielle)
-2. [Architecture logicielle](#2-architecture-logicielle)
-3. [Matériel nécessaire](#3-matériel-nécessaire)
-4. [Montage pas à pas](#4-montage-pas-à-pas)
+1. [Avant de commencer](#1-avant-de-commencer)
+2. [Identifier les composants](#2-identifier-les-composants)
+3. [Architecture matérielle](#3-architecture-matérielle)
+4. [Matériel nécessaire](#4-matériel-nécessaire)
+5. [Montage pas à pas](#5-montage-pas-à-pas)
    - [Étape 1 — Arduino + USB](#étape-1--arduino--usb)
-   - [Étape 2 — Alimentation 12 V + Buck](#étape-2--alimentation-12-v--buck)
-   - [Étape 3 — Driver TMC2209](#étape-3--driver-tmc2209-sans-moteur)
-   - [Étape 4 — Moteur NEMA 14](#étape-4--moteur-nema-14)
-5. [Installation du firmware](#5-installation-du-firmware)
-6. [Configuration Wi-Fi](#6-configuration-wi-fi)
-7. [Interface web](#7-interface-web)
-8. [API REST](#8-api-rest)
-9. [Paramètres et calibration](#9-paramètres-et-calibration)
-10. [Dépannage](#10-dépannage)
+   - [Étape 2 — Alimentation 12 V + Buck converter](#étape-2--alimentation-12-v--buck-converter)
+   - [Étape 3 — Condensateurs sur VM](#étape-3--condensateurs-sur-vm)
+   - [Étape 4 — Résistance PDN_UART](#étape-4--résistance-pdn_uart)
+   - [Étape 5 — Driver TMC2209 (sans moteur)](#étape-5--driver-tmc2209-sans-moteur)
+   - [Étape 6 — Moteur NEMA 14](#étape-6--moteur-nema-14)
+6. [Installation du firmware](#6-installation-du-firmware)
+7. [Configuration Wi-Fi](#7-configuration-wi-fi)
+8. [Interface web](#8-interface-web)
+9. [API REST](#9-api-rest)
+10. [Paramètres et calibration](#10-paramètres-et-calibration)
+11. [Dépannage](#11-dépannage)
 
 ---
 
-## 1. Architecture matérielle
+## 1. Avant de commencer
+
+### Outils nécessaires
+
+- Multimètre (indispensable — utilisé à chaque étape)
+- Pince brucelles ou petite pince plate
+- Fer à souder (si vous utilisez une breadboard à souder ou des connecteurs)
+- Fils de connexion avec embouts Dupont mâle/femelle (idéalement plusieurs couleurs)
+- Tournevis fin (potentiomètre du Buck converter)
+
+### Conventions de couleur recommandées
+
+Respectez ces couleurs pour les fils — elles vous sauveront en cas d'erreur :
+
+| Couleur | Usage |
+|---------|-------|
+| **Rouge** | + / alimentation positive |
+| **Noir** | GND / masse |
+| **Jaune ou orange** | Signaux (STEP, DIR, UART…) |
+| **Bleu** | EN (enable) |
+| **Vert** | 3,3 V logique (VIO) |
+
+### Règles de sécurité — à lire avant tout montage
+
+> Ces règles s'appliquent à chaque étape. Les ignorer peut détruire un composant ou endommager l'Arduino.
+
+1. **Toujours couper l'alimentation** avant d'ajouter ou de modifier un câblage.
+2. **Vérifier deux fois** chaque connexion avant de mettre sous tension.
+3. **Ne jamais connecter ni déconnecter le moteur sous tension** — cela peut détruire le driver TMC2209 instantanément.
+4. **Ne jamais alimenter le TMC2209 en VIO avant le 12 V VM** (séquence d'alimentation sans importance pour ce montage, mais rester prudent).
+5. **Le VIO du TMC2209 doit être alimenté en 3,3 V** — jamais en 5 V. L'Arduino Nano ESP32 est un circuit 3,3 V.
+6. **Un condensateur électrolytique a une polarité** — le brancher à l'envers peut le faire exploser.
+
+---
+
+## 2. Identifier les composants
+
+Avant le montage, vous devez être capable d'identifier et de mesurer chaque composant.
+
+### La résistance 1 kΩ
+
+Une résistance se lit grâce aux **bandes de couleur** peintes sur son corps.
+
+Pour une résistance **1 kΩ** (4 bandes) :
+
+```
+  │ Brun │ Noir │ Rouge │ Or │
+  │   1  │   0  │  ×100 │ 5% │
+  →  1 × 10 × 100 = 1 000 Ω = 1 kΩ
+```
+
+**Vérification au multimètre :**
+- Sélectionner le mode Ω (ohmmètre)
+- Toucher les deux pattes de la résistance avec les pointes de mesure
+- Lire : doit afficher entre **950 Ω et 1 050 Ω** (tolérance 5 %)
+
+> Une résistance n'a pas de sens — les deux pattes sont interchangeables.
+
+---
+
+### Le condensateur céramique 100 nF
+
+Le condensateur **céramique** est un petit disque ou pastille plate, souvent jaune ou orangé, avec deux pattes.
+
+```
+     ┌──┐
+     │  │  ← pastille céramique (peut indiquer "104" = 100 nF)
+    ─┘  └─
+```
+
+**Lire la valeur "104" inscrite dessus :**
+- `10` = 10
+- `4` = × 10⁴ (10 000)
+- → 100 000 pF = **100 nF**
+
+**Il n'a pas de polarité** — les deux pattes sont interchangeables. Vous pouvez le brancher dans n'importe quel sens.
+
+**Vérification au multimètre :**
+- Sélectionner le mode capacimètre (symbole ⊣⊢ ou "CAP")
+- Doit afficher **≈ 100 nF** (souvent entre 80 et 120 nF, c'est normal)
+- Si votre multimètre ne mesure pas les capacités, ce n'est pas grave — identifiez-le visuellement.
+
+---
+
+### Le condensateur électrolytique 100 µF
+
+Le condensateur **électrolytique** est un petit cylindre avec une bande blanche ou grise sur un côté.
+
+```
+        ─── (patte courte = négatif -)
+    ┌───────┐
+    │  ███  │ ← bande blanche ou grise = côté NÉGATIF
+    │ 100µF │
+    │  25V  │
+    └───────┘
+        ─── (patte longue = positif +)
+```
+
+**Identifier la polarité :**
+
+| Signe | Côté |
+|-------|------|
+| Patte **longue** | **+ (positif)** à relier au +12 V / VM |
+| Patte **courte** | **− (négatif)** à relier au GND |
+| Bande blanche/grise | Côté **− (négatif)** |
+
+> **Attention :** brancher un condensateur électrolytique à l'envers peut le faire gonfler, fuir ou exploser. Toujours vérifier la polarité avant mise sous tension.
+
+**Vérification au multimètre (mode capacimètre) :**
+- Doit afficher entre **80 µF et 120 µF** (tolérance courante ±20 %)
+
+---
+
+## 3. Architecture matérielle
 
 ### Vue d'ensemble
 
@@ -70,9 +186,6 @@ Bloc secteur 12 V DC
                                                        3V3 ──► VIO du TMC2209
 ```
 
-> **Condensateurs obligatoires sur VM** : 100 nF céramique + 100 µF électrolytique
-> au plus près des broches VM/GND du TMC2209 pour absorber les pics de courant.
-
 ### Paramètres mécaniques
 
 | Paramètre | Valeur | Calcul |
@@ -85,55 +198,30 @@ Bloc secteur 12 V DC
 | Vitesse travail | 6 400 pas/s | ≈ 3 tr/min diviseur |
 | Accélération | 4 000 pas/s² | profil trapézoïdal |
 
-### UART half-duplex TMC2209
+### Pourquoi la résistance 1 kΩ sur PDN_UART ?
 
-Le TMC2209 utilise un seul fil (PDN_UART) pour RX et TX.
-La résistance 1 kΩ en série sur D5 limite le courant lorsque RX et TX
-sont brièvement en opposition. MS1=GND et MS2=GND fixent l'adresse UART à 0.
+Le TMC2209 utilise un seul fil (PDN_UART) pour envoyer **et** recevoir des données en même temps (half-duplex). L'ESP32 a deux broches séparées en interne : TX (émission) et RX (réception). Ces deux broches sont réunies sur le même fil physique.
+
+Sans résistance, si TX et RX sont simultanément à des niveaux opposés (0 V et 3,3 V), un court-circuit de quelques millisecondes se produit. La résistance **1 kΩ** limite ce courant à 3,3 V / 1 000 Ω = 3,3 mA — inoffensif pour les composants.
+
+```
+Arduino D5 (TX+RX) ──[1 kΩ]──── PDN_UART du TMC2209
+                                      │
+                                      └──► également relié au RX interne de D5
+```
+
+### Pourquoi les condensateurs sur VM ?
+
+Lorsque le moteur change de direction ou démarre, il tire brusquement du courant. Cette variation rapide crée des **pics de tension** (surtensions) sur le fil 12 V qui peuvent dépasser la limite du TMC2209 et le détruire.
+
+- Le **100 nF céramique** absorbe les pics très rapides (haute fréquence)
+- Le **100 µF électrolytique** absorbe les pics plus lents (basse fréquence, grande énergie)
+
+Les deux condensateurs se complètent. Ils doivent être placés **au plus près possible** des broches VM et GND du TMC2209 (moins de 2 cm si possible) pour être efficaces.
 
 ---
 
-## 2. Architecture logicielle
-
-### Firmware (Arduino / ESP32)
-
-```
-loop()
-  ├── server.handleClient()   ← traite les requêtes HTTP entrantes
-  ├── stepper.run()           ← génère les impulsions STEP (profil AccelStepper)
-  └── tickDiag()              ← exécute un test diagnostic par itération
-
-Librairies
-  ├── AccelStepper  → profil trapézoïdal STEP/DIR
-  ├── TMCStepper    → configuration UART : courant, µstepping, StealthChop/SpreadCycle
-  ├── WebServer     → API REST + pages HTML en PROGMEM
-  └── WiFiManager   → portail captif pour la configuration Wi-Fi
-```
-
-### Pages HTML
-
-Les deux pages (contrôleur et diagnostic) sont stockées en **PROGMEM** (Flash)
-pour ne pas consommer de SRAM précieuse. Elles sont servies directement depuis
-la Flash par `server.send_P()`.
-
-### Polling adaptatif
-
-| Contexte | Intervalle |
-|----------|-----------|
-| Contrôleur — repos | 1 500 ms |
-| Contrôleur — mouvement en cours | 300 ms (barre de progression fluide) |
-| Diagnostic — inactif | 5 000 ms |
-| Diagnostic — tests en cours | 400 ms |
-
-### Tests diagnostics non-bloquants
-
-La page `/diag` exécute les tests **un par un** dans `loop()` via `tickDiag()`.
-Le POST `/api/diag/run` retourne immédiatement ; le client interroge `/api/diag`
-(champ `running`) jusqu'à la fin des tests.
-
----
-
-## 3. Matériel nécessaire
+## 4. Matériel nécessaire
 
 | Composant | Référence | Quantité |
 |-----------|-----------|----------|
@@ -142,10 +230,11 @@ Le POST `/api/diag/run` retourne immédiatement ; le client interroge `/api/diag
 | Moteur | NEMA 14, 200 pas/tr, 600 mA RMS ou plus | 1 |
 | Alimentation | Bloc secteur 12 V DC, min 2 A | 1 |
 | Buck converter | 12 V → 5 V, min 1 A (ex. LM2596) | 1 |
-| Résistance | 1 kΩ ¼ W | 1 |
-| Condensateurs | 100 nF céramique + 100 µF 25 V électrolytique | 1 de chaque |
+| Résistance | 1 kΩ ¼ W (bandes : brun-noir-rouge-or) | 1 |
+| Condensateur céramique | 100 nF (marquage "104") | 1 |
+| Condensateur électrolytique | 100 µF 25 V (ou plus) | 1 |
 | Câble USB-C | pour programmation et alimentation | 1 |
-| Fils de connexion | — | — |
+| Fils de connexion | plusieurs couleurs recommandées | — |
 
 **Logiciel requis sur le PC**
 
@@ -159,17 +248,17 @@ Le POST `/api/diag/run` retourne immédiatement ; le client interroge `/api/diag
 
 ---
 
-## 4. Montage pas à pas
+## 5. Montage pas à pas
 
-Le montage est organisé en **4 étapes** qui correspondent exactement aux
-**4 groupes de tests** de la page `/diag`. Effectuez les tests avant de
-passer à l'étape suivante.
+Le montage est organisé en **6 étapes progressives**. Chaque étape doit être validée avant de passer à la suivante. Les tests logiciels de la page `/diag` couvrent les étapes 1, 2, 5 et 6.
+
+> **Règle d'or :** ne jamais mettre sous tension sans avoir coché toutes les cases de vérification de l'étape.
 
 ---
 
 ### Étape 1 — Arduino + USB
 
-**Objectif** : vérifier que le firmware fonctionne et que le Wi-Fi se connecte.
+**Objectif :** vérifier que le firmware fonctionne et que le Wi-Fi se connecte. Aucun composant externe.
 
 #### Câblage
 
@@ -188,7 +277,7 @@ arduino-cli upload  --fqbn arduino:esp32:nano_nora -p /dev/ttyACM0 diviseur/
 ```
 
 > **Note** : le script `deploy` doit être installé dans `/usr/local/bin`.
-> Voir section [Installation du firmware](#5-installation-du-firmware).
+> Voir section [Installation du firmware](#6-installation-du-firmware).
 
 #### Configuration Wi-Fi (première mise en route)
 
@@ -198,7 +287,7 @@ arduino-cli upload  --fqbn arduino:esp32:nano_nora -p /dev/ttyACM0 diviseur/
 4. Entrer le SSID et le mot de passe du réseau local
 5. L'ESP32 redémarre et affiche l'IP dans le moniteur série
 
-#### Tests à effectuer (Étape 1)
+#### Tests logiciels — Groupe 1
 
 Ouvrir `http://<ip>/diag` → **Étape 1** → **▶ Tester**
 
@@ -209,34 +298,50 @@ Ouvrir `http://<ip>/diag` → **Étape 1** → **▶ Tester**
 
 ---
 
-### Étape 2 — Alimentation 12 V + Buck
+### Étape 2 — Alimentation 12 V + Buck converter
 
-**Objectif** : valider l'alimentation externe avant de connecter le driver.
+**Objectif :** valider l'alimentation externe avant de connecter le moindre composant électronique.
 
-#### Câblage
+#### Réglage du Buck converter (AVANT tout câblage)
+
+Le Buck converter sort une tension réglable via un petit potentiomètre à vis.
+
+> **Régler la tension à vide, bloc 12 V branché mais rien d'autre connecté.**
 
 ```
-Bloc 12 V
-    │
-    ├──► IN+ du Buck converter
-    │         │
-    │        OUT+ (régler à 5,0 V) ──► USB-C Arduino (via adaptateur)
-    │        OUT- ──► GND Buck
-    │
-    └──► VM du TMC2209  (à l'étape 3)
-         GND ──► GND commun
+Bloc 12 V ──► IN+ du Buck
+              IN- du Buck ──► GND
+
+Multimètre sur OUT+ / OUT- du Buck
+Tourner le potentiomètre jusqu'à lire 5,0 V
 ```
 
-> **Avant de connecter quoi que ce soit**, régler le potentiomètre du Buck
-> à **5,0 V** en mesurant la sortie à vide avec un multimètre.
+- Tourner dans le sens horaire → tension augmente
+- Tourner dans le sens antihoraire → tension diminue
+- Cible : **5,0 V ± 0,1 V**
 
-#### Vérifications
+#### Câblage de l'alimentation Arduino
 
-1. Mesurer OUT+ du Buck = **5,0 V ± 0,1 V**
-2. Alimenter l'Arduino depuis le Buck (USB-C)
-3. Vérifier que l'interface web est toujours accessible
+Une fois réglé à 5,0 V :
 
-#### Tests à effectuer (Étape 2)
+```
+Buck OUT+ (5 V) ──► USB-C de l'Arduino (via adaptateur ou câble modifié)
+Buck OUT-       ──► GND commun
+```
+
+#### Liste de vérification avant mise sous tension
+
+- [ ] Buck réglé à **5,0 V** mesuré à vide au multimètre
+- [ ] Aucun autre composant connecté au Buck ou au 12 V
+- [ ] Fils d'alimentation bien fixés (pas de court-circuit possible)
+
+#### Tests à effectuer
+
+1. Mettre le bloc 12 V sous tension
+2. Mesurer OUT+ du Buck = **5,0 V ± 0,1 V** (confirmer la stabilité sous charge)
+3. Vérifier que l'interface web est toujours accessible depuis le smartphone
+
+#### Tests logiciels — Groupe 2
 
 Page `/diag` → **Étape 2** → **▶ Tester**
 
@@ -244,14 +349,116 @@ Page `/diag` → **Étape 2** → **▶ Tester**
 |------|---------|
 | T03 Alimentation 5 V (Buck) | ALERTE — confirmation manuelle requise |
 
-> T03 est une vérification manuelle : confirmer la mesure au multimètre,
-> puis marquer mentalement l'étape comme validée.
+> T03 est une vérification manuelle : confirmer la mesure au multimètre, puis valider avec le bouton **✓ OK** dans l'interface.
 
 ---
 
-### Étape 3 — Driver TMC2209 (sans moteur)
+### Étape 3 — Condensateurs sur VM
 
-**Objectif** : vérifier la communication UART avec le driver.
+**Objectif :** placer les condensateurs de protection sur la ligne 12 V du driver. C'est une étape purement mécanique — pas de mise sous tension.
+
+> Placez les condensateurs **avant** de câbler le TMC2209 pour ne pas oublier.
+
+#### Placement sur la breadboard ou le PCB
+
+Les deux condensateurs se placent **en parallèle** entre VM (+12 V) et GND, au plus près des broches VM/GND du TMC2209.
+
+```
+        VM (+12 V)
+           │
+    ┌──────┴──────┐
+    │             │
+   ═╪═           ╫   ← condensateur céramique 100 nF (disque/pastille)
+    │             │       pas de polarité — sens indifférent
+    │            ═╪═
+    │             │   ← condensateur électrolytique 100 µF
+    │             │       patte longue (+) vers VM
+    │             │       patte courte (−) vers GND
+    └──────┬──────┘
+           │
+          GND
+```
+
+**En pratique sur une breadboard :**
+
+```
+Colonne + (bus rouge) = VM (+12 V)
+Colonne − (bus bleu)  = GND
+
+Condensateur céramique 100 nF :
+  Une patte dans le bus rouge (+)
+  Autre patte dans le bus bleu (−)
+  → sens indifférent
+
+Condensateur électrolytique 100 µF :
+  Patte LONGUE (+) dans le bus rouge (+)
+  Patte COURTE (−) dans le bus bleu (−)
+  → RESPECTER LA POLARITÉ
+```
+
+#### Vérification avant de continuer
+
+- [ ] Condensateur céramique : une patte sur VM, une patte sur GND
+- [ ] Condensateur électrolytique : patte longue sur VM, patte courte sur GND
+- [ ] La bande blanche/grise du condensateur électrolytique est du côté GND
+- [ ] Les deux condensateurs sont dans la zone VM/GND du TMC2209 (moins de 2 cm des broches)
+- [ ] Aucun fil ne touche les pattes des condensateurs (court-circuit)
+
+> Pas de test logiciel pour cette étape — vérification visuelle uniquement.
+
+---
+
+### Étape 4 — Résistance PDN_UART
+
+**Objectif :** préparer le câble de communication UART avant de connecter le TMC2209.
+
+#### Pourquoi câbler la résistance maintenant ?
+
+Il est plus facile de monter la résistance séparément, de la mesurer, puis de l'intégrer dans le câblage global à l'étape suivante.
+
+#### Montage de la résistance
+
+La résistance se place **en série** sur le fil qui relie la broche D5 de l'Arduino à la broche PDN_UART du TMC2209. "En série" signifie que le courant doit obligatoirement passer à travers elle.
+
+```
+Arduino D5 ──── [fil] ──── [1 kΩ] ──── [fil] ──── PDN_UART TMC2209
+                              ↑
+                    La résistance est intercalée
+                    dans le fil de connexion
+```
+
+**Méthode pratique (breadboard) :**
+
+```
+1. Insérer la résistance dans deux trous adjacents de la breadboard
+         Trou A ──[résistance]──Trou B
+
+2. Brancher un fil de D5 de l'Arduino → Trou A
+3. Brancher un fil de Trou B → PDN_UART du TMC2209
+```
+
+**NE PAS faire :**
+```
+❌ Placer la résistance en parallèle (entre VM et GND) — ce serait un court-circuit
+❌ Relier D5 directement à PDN_UART sans résistance
+```
+
+#### Vérification au multimètre
+
+Avant de connecter quoi que ce soit :
+
+1. Débrancher le fil côté Arduino (D5)
+2. Multimètre en mode Ω — mesurer entre le point D5 et le point PDN_UART
+3. Doit lire : **950 Ω à 1 050 Ω**
+
+Si la mesure est 0 Ω : la résistance est court-circuitée ou absente.
+Si la mesure est `OL` (infini) : connexion interrompue, vérifier les fils.
+
+---
+
+### Étape 5 — Driver TMC2209 (sans moteur)
+
+**Objectif :** câbler le driver complet et vérifier la communication UART. Le moteur n'est pas connecté.
 
 #### Câblage complet
 
@@ -262,28 +469,38 @@ D2  ──────────────────────► STEP
 D3  ──────────────────────► DIR
 D4  ──────────────────────► EN        (actif LOW)
 D5  ──── [1 kΩ] ──────────► PDN_UART  (half-duplex UART)
-3V3 ──────────────────────► VIO       (tension logique)
+3V3 ──────────────────────► VIO       (tension logique 3,3 V)
 GND ──────────────────────► GND
 GND ──────────────────────► MS1       (adresse UART 0)
 GND ──────────────────────► MS2       (adresse UART 0)
 
 Bloc 12 V ────────────────► VM        (puissance moteur)
-GND ──────────────────────► GND VM
+GND ──────────────────────► GND VM    (masse commune)
 
-[100 nF céramique + 100 µF électrolytique entre VM et GND, au plus près du TMC2209]
+[100 nF + 100 µF entre VM et GND — montés à l'étape 3]
 ```
 
 > **Ne pas connecter le moteur pour l'instant.**
 
-#### Vérifications avant mise sous tension
+#### Liste de vérification avant mise sous tension
 
-- [ ] Résistance 1 kΩ bien en série sur PDN_UART (pas en parallèle)
-- [ ] MS1 et MS2 reliés à GND (adresse UART 0)
-- [ ] VIO relié au **3V3** de l'Arduino (pas au 5V, le Nano ESP32 est 3,3 V)
-- [ ] Condensateurs posés sur VM/GND
-- [ ] VM relié au 12 V, GND commun
+- [ ] Résistance 1 kΩ bien **en série** sur le fil D5 → PDN_UART (mesurée à l'étape 4)
+- [ ] MS1 relié à **GND** (pas à VIO)
+- [ ] MS2 relié à **GND** (pas à VIO)
+- [ ] VIO relié au **3V3** de l'Arduino (pas au 5 V !)
+- [ ] GND Arduino relié au GND TMC2209
+- [ ] GND du 12 V relié au GND commun (masse commune entre Arduino et TMC2209)
+- [ ] VM relié au **+12 V** du bloc secteur
+- [ ] Condensateurs en place (étape 3 validée)
+- [ ] Le moteur **n'est pas connecté**
 
-#### Tests à effectuer (Étape 3)
+#### Vérification avec le multimètre avant mise sous tension
+
+Avant tout, vérifier qu'il n'y a pas de court-circuit sur l'alimentation :
+1. Multimètre en mode Ω — mesurer entre VM et GND : doit afficher une valeur élevée (plusieurs kΩ ou `OL`)
+2. Si vous lisez 0 Ω : court-circuit, ne pas mettre sous tension, vérifier le câblage
+
+#### Tests logiciels — Groupe 3
 
 Page `/diag` → **Étape 3** → **▶ Tester**
 
@@ -291,61 +508,82 @@ Page `/diag` → **Étape 3** → **▶ Tester**
 |------|---------|
 | T04 UART → TMC2209 | OK — version 0x21 détectée |
 | T05 Config courant + µstepping | OK — 600 mA, 16× |
-| T06 Alimentation moteur VM | ALERTE — mesurer 12 V sur VM |
+| T06 Alimentation moteur VM | ALERTE — mesurer 12 V sur VM, valider manuellement |
 | T07 Broche EN | OK — driver activé puis désactivé |
 
-> Si T04 échoue (0x00 ou 0xFF) : vérifier le câblage PDN_UART, la résistance 1 kΩ,
-> MS1/MS2 à GND, et VIO alimenté. Voir section [Dépannage](#10-dépannage).
+> Si T04 échoue (0x00 ou 0xFF) : voir la section [Dépannage T04](#t04-échoue--uart-tmc2209-0x00-ou-0xff).
 
 ---
 
-### Étape 4 — Moteur NEMA 14
+### Étape 6 — Moteur NEMA 14
 
-**Objectif** : valider le mouvement, le sens de rotation et la thermique.
+**Objectif :** connecter le moteur, valider le mouvement, le sens de rotation et la thermique.
+
+#### Identifier les bobines au multimètre
+
+Le moteur NEMA 14 a 4 fils (2 bobines de 2 fils chacune). Il faut identifier quelle paire appartient à quelle bobine.
+
+1. Multimètre en mode Ω
+2. Tester toutes les combinaisons de paires de fils
+3. Une paire de la **même bobine** → résistance **10 à 20 Ω**
+4. Deux fils de bobines différentes → résistance infinie (`OL`)
+
+```
+Fils souvent colorés :
+  Bobine A : noir + vert  (ou rouge + bleu selon fabricant)
+  Bobine B : rouge + bleu (ou jaune + orange)
+
+→ Mesurer pour confirmer
+```
 
 #### Connexion du moteur
 
-Identifier les bobines avec un multimètre (mesurer la résistance) :
-- **Bobine A** : paire de fils avec résistance ~10-20 Ω → A1 / A2 du TMC2209
-- **Bobine B** : paire de fils avec résistance ~10-20 Ω → B1 / B2 du TMC2209
-
 ```
 NEMA 14
-  Bobine A ─── A1 ──► TMC2209 OA1
-              A2 ──► TMC2209 OA2
-  Bobine B ─── B1 ──► TMC2209 OB1
-              B2 ──► TMC2209 OB2
+  Bobine A ─── fil 1 ──► TMC2209 OA1
+              fil 2 ──► TMC2209 OA2
+  Bobine B ─── fil 1 ──► TMC2209 OB1
+              fil 2 ──► TMC2209 OB2
 ```
 
-> **Ne pas connecter / déconnecter le moteur sous tension.**
+> **Couper l'alimentation avant de connecter le moteur. Ne jamais brancher ou débrancher le moteur sous tension.**
 
-#### Tests à effectuer (Étape 4)
+#### Liste de vérification avant mise sous tension
+
+- [ ] Moteur éteint — alimentation coupée pendant le câblage
+- [ ] Bobine A identifiée et connectée à OA1 / OA2
+- [ ] Bobine B identifiée et connectée à OB1 / OB2
+- [ ] Aucune patte du moteur ne touche le châssis ou d'autres fils
+
+#### Tests logiciels — Groupe 4
 
 Page `/diag` → **Étape 4** → **▶ Tester**
 
 | Test | Attendu |
 |------|---------|
-| T08 Sens de rotation | ALERTE — à vérifier visuellement (voir ci-dessous) |
+| T08 Sens de rotation | ALERTE — à vérifier visuellement |
 | T09 Précision microstepping | ALERTE — à valider après montage complet |
 | T10 Température driver | OK — DRV_STATUS nominal |
 
-#### Vérification du sens de rotation
+#### Vérification du sens de rotation (T08)
 
 1. Page `/` → activer le moteur (toggle **Moteur**)
 2. Appuyer sur **AVANCE ▶**
-3. Le diviseur doit avancer dans le sens horaire (vu de face)
-4. Si le sens est inversé : permuter A1↔A2 **ou** B1↔B2 (pas les deux)
+3. Le diviseur doit tourner dans le sens horaire (vu de face)
+4. Si le sens est inversé : couper l'alimentation, permuter **A1↔A2** sur OA1/OA2 (ou B1↔B2, pas les deux)
+5. Valider T08 manuellement avec **✓ OK**
 
 #### Test de précision (T09)
 
 1. Marquer la position zéro au feutre sur le diviseur
-2. Régler **6 divisions** (60° par pas)
-3. Faire 6 avances successives → vérifier le retour à zéro
+2. Régler **6 divisions** dans l'interface (60° par pas)
+3. Faire 6 avances successives → le diviseur doit revenir exactement à zéro
 4. Répéter avec **3 divisions** (120°) et **4 divisions** (90°)
+5. Valider T09 manuellement avec **✓ OK**
 
 ---
 
-## 5. Installation du firmware
+## 6. Installation du firmware
 
 ### Méthode recommandée — script `deploy`
 
@@ -394,7 +632,7 @@ par `/api/status` (champ `version`).
 
 ---
 
-## 6. Configuration Wi-Fi
+## 7. Configuration Wi-Fi
 
 | Situation | Comportement |
 |-----------|-------------|
@@ -410,7 +648,7 @@ l'Arduino pendant 10 s au démarrage (active le portail captif de WiFiManager).
 
 ---
 
-## 7. Interface web
+## 8. Interface web
 
 ### Page Contrôleur (`http://<ip>/`)
 
@@ -435,7 +673,7 @@ l'Arduino pendant 10 s au démarrage (active le portail captif de WiFiManager).
 
 ---
 
-## 8. API REST
+## 9. API REST
 
 ### `/api/status` — GET
 
@@ -489,7 +727,7 @@ l'Arduino pendant 10 s au démarrage (active le portail captif de WiFiManager).
 
 ---
 
-## 9. Paramètres et calibration
+## 10. Paramètres et calibration
 
 ### Constantes firmware (`diviseur.ino`)
 
@@ -522,28 +760,30 @@ l'Arduino pendant 10 s au démarrage (active le portail captif de WiFiManager).
 
 ---
 
-## 10. Dépannage
+## 11. Dépannage
 
 ### T04 échoue — UART TMC2209 (0x00 ou 0xFF)
 
 | Vérification | Action |
 |-------------|--------|
-| Résistance 1 kΩ | Mesurer la résistance entre D5 et PDN_UART — doit être ~1 kΩ |
-| MS1 / MS2 | Confirmer la connexion à GND (non à VIO) |
-| VIO | Doit être à 3,3 V (broche 3V3 de l'Arduino) |
+| Résistance 1 kΩ | Multimètre entre D5 et PDN_UART → doit lire ~1 kΩ |
+| Résistance en série | Vérifier qu'elle est bien **dans** le fil, pas en parallèle |
+| MS1 / MS2 | Confirmer la connexion à GND (et non à VIO) |
+| VIO | Doit être à **3,3 V** (broche 3V3 de l'Arduino, pas le 5 V du Buck) |
+| GND commun | Arduino GND et TMC2209 GND doivent être reliés |
 | Soudures TMC2209 | Inspecter visuellement les broches du module |
-| UART conflict | S'assurer que `SerialTMC` utilise bien le port UART1 de l'ESP32-S3 |
 
 ### Moteur qui vibre sans avancer
 
 - Courant trop faible → augmenter `MOTOR_CURRENT` (max ~1 000 mA pour NEMA 14)
-- Bobines inversées → permuter A1↔A2 ou B1↔B2
+- Bobines inversées → permuter A1↔A2 ou B1↔B2 (jamais les deux en même temps)
+- GND non commun entre Arduino et TMC2209
 
 ### Surchauffe driver (T10 = FAIL)
 
 - Ajouter un dissipateur thermique sur le TMC2209
 - Réduire `MOTOR_CURRENT`
-- Vérifier les condensateurs sur VM
+- Vérifier la présence des condensateurs sur VM (étape 3)
 
 ### Interface web inaccessible
 
@@ -555,3 +795,9 @@ l'Arduino pendant 10 s au démarrage (active le portail captif de WiFiManager).
 
 - Normal : elle n'est visible que pendant un mouvement (`moving: true`)
 - Vérifier que le moteur est activé (toggle **Moteur** dans les réglages)
+
+### Condensateur électrolytique chaud ou gonflé
+
+- Couper l'alimentation immédiatement
+- Le condensateur est monté à l'envers (polarité inversée)
+- Le remplacer et vérifier : patte longue (+) sur VM, patte courte (−) sur GND
