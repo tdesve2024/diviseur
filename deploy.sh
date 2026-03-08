@@ -11,7 +11,6 @@ set -euo pipefail
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 REPO_URL="https://github.com/tdesve2024/diviseur"   # ← adapter si besoin
-BRANCH="main"
 
 SKETCH_NAME="diviseur"
 BUILD_DIR="${TMPDIR:-/tmp}/diviseur"
@@ -32,6 +31,57 @@ ok()  { echo -e "${GRN}✓ $*${NC}"; }
 inf() { echo -e "${BLU}▸ $*${NC}"; }
 wrn() { echo -e "${YLW}⚠ $*${NC}"; }
 die() { echo -e "${RED}✗ $*${NC}" >&2; exit 1; }
+
+# ── Sélection interactive de la branche ───────────────────────────────────────
+pick_branch() {
+  # Branche courante du dépôt local où tourne ce script (défaut si interactif)
+  local default_branch
+  default_branch=$(git -C "$(dirname "$0")" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+
+  inf "Récupération des branches disponibles sur GitHub..."
+  local branches
+  branches=$(git ls-remote --heads "$REPO_URL" 2>/dev/null | sed 's|.*refs/heads/||' | sort)
+
+  if [ -z "$branches" ]; then
+    wrn "Impossible de lister les branches — utilisation de '${default_branch}'"
+    echo "$default_branch"
+    return
+  fi
+
+  echo ""
+  echo "  Branches disponibles :"
+  local i=1 default_idx=1
+  local -a branch_array
+  while IFS= read -r b; do
+    branch_array+=("$b")
+    if [ "$b" = "$default_branch" ]; then
+      default_idx=$i
+      echo -e "    ${GRN}[$i]${NC} $b  ${YLW}← défaut${NC}"
+    else
+      echo "    [$i] $b"
+    fi
+    (( i++ ))
+  done <<< "$branches"
+
+  echo ""
+  # Si non interactif (CI / pipe), utiliser le défaut sans prompt
+  if [ ! -t 0 ]; then
+    echo "$default_branch"
+    return
+  fi
+
+  printf "  Choisissez une branche [%s] : " "$default_idx"
+  local choice
+  read -r choice
+  choice=${choice:-$default_idx}
+
+  if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#branch_array[@]} )); then
+    echo "${branch_array[$((choice - 1))]}"
+  else
+    wrn "Choix invalide — utilisation de '${default_branch}'"
+    echo "$default_branch"
+  fi
+}
 
 # ── Arguments ─────────────────────────────────────────────────────────────────
 PORT_ARG=""
@@ -55,6 +105,11 @@ inf "Vérification des prérequis..."
 command -v arduino-cli >/dev/null 2>&1 || die "arduino-cli introuvable — https://arduino.github.io/arduino-cli/latest/installation/"
 command -v git        >/dev/null 2>&1 || die "git introuvable"
 ok "arduino-cli $(arduino-cli version | head -1 | awk '{print $3}')"
+
+# ── Sélection de la branche ───────────────────────────────────────────────────
+BRANCH=$(pick_branch)
+ok "Branche sélectionnée : ${BRANCH}"
+echo ""
 
 # ── Core ESP32 ────────────────────────────────────────────────────────────────
 inf "Vérification du core arduino:esp32..."
